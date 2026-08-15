@@ -4,7 +4,7 @@ Takes a cross-sectional long/short equity strategy from an idea to a backtest
 and a report. Built so the next strategy is one method, not a change to the
 engine.
 
-## How to run
+## Running it locally
 
 ```bash
 uv sync
@@ -166,29 +166,25 @@ It gets a sortable column and its own tinting. Add its key to `headline` in
 
 ## Deployment
 
+For grid hosts, schedulers and CI. Everything above runs from a checkout; this
+is the same work on a machine with no Python and nobody watching.
+
 Two jobs, neither a service, with the store between them. That gap is why a
 backtest runs offline and never depends on vendor uptime.
 
 **Ingestion** touches the network and writes to the store. It produces no
-artifact; the store *is* the output.
-
-```bash
-backtester ingest                                     # run it whenever you want data
-```
-
-Run it on demand. In production it would sit on a schedule, but nothing here
-configures one, because a job that runs by hand runs under cron unchanged:
+artifact; the store *is* the output. Periodic here, on demand locally:
 
 ```cron
 0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
 ```
 
-**Backtests** read the store and write an artifact. They coordinate with
-nothing, so run as many in parallel as you like.
+Nothing in the repository configures a scheduler. The command is the same one
+you run by hand, which is the point: a job that runs by hand runs under cron
+unchanged.
 
-Everything above runs from a checkout. The image is for running it somewhere
-that is not your machine: a scheduler host, a grid worker, CI. Same commands,
-no Python on the host.
+**Backtests** read the store and write an artifact. They coordinate with
+nothing, so a grid can run as many as it has workers for.
 
 ```bash
 docker build -t backtester .
