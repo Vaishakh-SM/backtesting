@@ -7,6 +7,9 @@ run here or on a grid and produce the same result.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -55,9 +58,55 @@ class BacktestSpec:
     def content_id(self) -> str | None:
         """Hash of the canonical form, or None if not reproducible.
 
-        Same content_id means same result, so it doubles as a cache key.
+        Same content_id means same result, so it names the output directory and
+        doubles as a cache key: a queue that delivers a job twice writes the
+        same place rather than twice.
+
+        None for a spec holding a live strategy object, because nothing can
+        guarantee two machines would rebuild the same thing.
         """
-        raise NotImplementedError
+        if not isinstance(self.strategy, StrategyRef):
+            return None
+        return hashlib.sha256(_canonical(self).encode()).hexdigest()[:16]
+
+    def to_dict(self) -> dict[str, Any]:
+        """The form that goes on the wire and into spec.json.
+
+        Requires the strategy as a name and parameters. qrt.backtest.store
+        converts a live object where it can.
+        """
+        if not isinstance(self.strategy, StrategyRef):
+            raise ValueError(
+                "this spec holds a live strategy object, which cannot be serialised. "
+                "Use qrt.strategy.as_ref to name it first."
+            )
+        return {
+            "strategy": {"name": self.strategy.name, "params": dict(self.strategy.params)},
+            "universe": list(self.universe),
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "as_of_knowledge": self.as_of_knowledge.isoformat(),
+            "point_in_time": self.point_in_time,
+            "rebalance_frequency": self.rebalance_frequency,
+            "execution_lag_sessions": self.execution_lag_sessions,
+            "cost_bps": self.cost_bps,
+            "code_version": self.code_version,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> BacktestSpec:
+        return cls(
+            universe=tuple(raw["universe"]),
+            start=datetime.fromisoformat(raw["start"]),
+            end=datetime.fromisoformat(raw["end"]),
+            strategy=StrategyRef(raw["strategy"]["name"], raw["strategy"]["params"]),
+            as_of_knowledge=datetime.fromisoformat(raw["as_of_knowledge"]),
+            point_in_time=raw["point_in_time"],
+            rebalance_frequency=raw["rebalance_frequency"],
+            execution_lag_sessions=raw["execution_lag_sessions"],
+            cost_bps=raw["cost_bps"],
+            code_version=raw.get("code_version", ""),
+        )
 
 
 @dataclass(frozen=True)
@@ -78,3 +127,9 @@ class BacktestResult:
     scores: Any  # per rebalance: ticker -> score
     positions: Any
     returns: Any
+
+
+def _canonical(spec: BacktestSpec) -> str:
+    """Sorted keys and no whitespace, so the hash depends on the content rather
+    than on how the dictionary happened to be built."""
+    return json.dumps(spec.to_dict(), sort_keys=True, separators=(",", ":"))

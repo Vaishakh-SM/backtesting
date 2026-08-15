@@ -15,5 +15,6 @@ start: 2020-01-01
 end: 2025-01-01
 
 rebalance_frequency: M
-execution_lag_days: 1
+execution_lag_sessions: 1
+cost_bps: 10.0
 point_in_time: true

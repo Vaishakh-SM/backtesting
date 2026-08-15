@@ -37,8 +37,9 @@ class BacktestConfig(BaseModel):
     start: date
     end: date
     rebalance_frequency: Literal["M", "W", "D"] = "M"
-    execution_lag_days: int = Field(default=1, ge=0)
+    execution_lag_sessions: int = Field(default=1, ge=0)
     point_in_time: bool = True
+    cost_bps: float = Field(default=10.0, ge=0)
 
     @field_validator("end")
     @classmethod
