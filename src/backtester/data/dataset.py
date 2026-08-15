@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,16 +46,34 @@ class DatasetRef:
         return opts
 
     def as_duckdb(self) -> Sequence[str]:
-        """SQL to run before querying. Empty for a local root."""
+        """SQL to run before querying. Empty for a local root.
+
+        Credentials come from the environment, never from a spec or a config
+        file — those get committed, and a backtest spec travels through a
+        queue. polars and pyarrow read AWS_* themselves; duckdb does not, so
+        they are passed explicitly here.
+        """
         if not self.is_remote:
             return []
+
         stmts = ["INSTALL httpfs", "LOAD httpfs"]
         if region := self.storage_options.get("region"):
-            stmts.append(f"SET s3_region='{region}'")
+            stmts.append(f"SET s3_region='{_sql(region)}'")
+
         if endpoint := self.storage_options.get("endpoint"):
-            stmts.append(f"SET s3_endpoint='{endpoint}'")
-            stmts.append("SET s3_use_ssl=false")
+            # duckdb adds the scheme itself. Passing one produces a request to
+            # http://http://host, which fails as an unresolvable hostname.
+            scheme, _, host = endpoint.rpartition("//")
+            stmts.append(f"SET s3_endpoint='{_sql(host)}'")
+            stmts.append(f"SET s3_use_ssl={'true' if scheme.startswith('https') else 'false'}")
             stmts.append("SET s3_url_style='path'")
+
+        key, secret = os.environ.get("AWS_ACCESS_KEY_ID"), os.environ.get("AWS_SECRET_ACCESS_KEY")
+        if key and secret:
+            stmts.append(f"SET s3_access_key_id='{_sql(key)}'")
+            stmts.append(f"SET s3_secret_access_key='{_sql(secret)}'")
+        if token := os.environ.get("AWS_SESSION_TOKEN"):
+            stmts.append(f"SET s3_session_token='{_sql(token)}'")
         return stmts
 
 
@@ -64,3 +83,10 @@ class MissingData(ValueError):
 
     def __init__(self, ref: DatasetRef, table: str) -> None:
         super().__init__(f"no {table} data at {ref.table(table)} — run `backtester ingest` first")
+
+
+def _sql(value: str) -> str:
+    """Escape a value for a duckdb SET statement. These are configuration
+    strings rather than user input, but a secret containing a quote would
+    otherwise produce a confusing syntax error."""
+    return value.replace("'", "''")

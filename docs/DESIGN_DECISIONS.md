@@ -50,6 +50,20 @@ Supporting another engine is another `as_*` method. There is no query-engine
 interface, because in practice only a few engines exist and a method each is
 cheaper than a hierarchy.
 
+**Credentials come from the environment, never from a spec or a config file.**
+Those get committed, and a spec travels through a queue. Only the region and an
+optional endpoint are configuration:
+
+```bash
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...   # or an instance role
+backtester run configs/momentum.yaml --root s3://research/us-equities
+```
+
+polars and pyarrow read `AWS_*` themselves, so writes and the default reader
+need nothing further. DuckDB does not, so `as_duckdb` passes them explicitly —
+which is the kind of difference that is invisible until someone switches engine
+in production.
+
 Polars and DuckDB are both wired up. Polars is the default; both read parquet,
 push filters down, and read object storage directly. A test asserts they return
 identical frames, since nothing else forces them to agree.

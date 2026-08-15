@@ -186,13 +186,16 @@ docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
   run configs/momentum.yaml --root /data/us-equities --out /out
 ```
 
-Object storage changes one thing:
+Object storage changes the root. Credentials come from the environment, the
+same as any AWS tool, and never from a config file:
 
 ```bash
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...    # or an instance role
 backtester run configs/momentum.yaml --root s3://research/us-equities --region us-east-1
 ```
 
-`docker compose up` runs that shape against MinIO with no AWS account.
+`docker compose up` runs that shape against MinIO with no AWS account, which is
+also how the S3 path is tested.
 
 Logs go to stderr, not files: cron mails them, Docker captures them, a
 scheduler collects them. No secrets, since the data source is public.
