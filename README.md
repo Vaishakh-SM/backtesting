@@ -18,12 +18,13 @@ backtester report out/* --out out/report.html     # -> out/report.html
 Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest. Ingest
 once; the backtest and report read what it landed and need no network.
 
-## Shape
+## Design
 
-```
-ingest  ──►  append-only store  ──►  backtest  ──►  report
-(periodic)   (parquet, bitemporal)   (per spec)     (one html file)
-```
+![How it fits together](docs/design.png)
+
+Five stages, each taking its parts from outside itself. Data is an append-only
+log where every row records both when something happened and when we learned
+it, so a decision can only ever see what was already known.
 
 | Package | Job |
 |---|---|
@@ -35,16 +36,8 @@ ingest  ──►  append-only store  ──►  backtest  ──►  report
 Dependencies run one way, `report → engine → strategy → data`. A test asserts
 it, because reversing it once caused a circular import every other test missed.
 
-## Two ideas behind the design
-
-**Ingestion is separate from backtesting.** A periodic job fetches and appends;
-backtests read only what has landed, so they run offline and never depend on
-vendor uptime.
-
-**Every row carries two timestamps.** `event_ts` is what it is about,
-`knowledge_ts` is when we learned it. Nothing is updated; a restatement
-appends. A decision at time `t` sees `event_ts <= t` **and**
-`knowledge_ts <= t`, so a later correction cannot leak backwards.
+Every decision behind this, including the ones deliberately not taken, is in
+[`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md).
 
 ## Adding a strategy
 

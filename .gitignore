@@ -7,6 +7,10 @@ CLAUDE.md
 # The brief this was written against. Not part of the deliverable.
 assignment.md
 
+# Diagram source. Only the exported png ships; keeping both invites them
+# disagreeing with each other.
+*.excalidraw
+
 # Design sketches — superseded by docs/DESIGN_DECISIONS.md
 initial_design.py
 base_classes.py
