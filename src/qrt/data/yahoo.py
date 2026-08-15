@@ -24,13 +24,17 @@ Two things about Yahoo that shape the rest of the design:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import functools
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, TypeVar
 
 import pandas as pd
 import pyarrow as pa
 import yfinance as yf
+from yfinance import exceptions as yfe
 
 from qrt.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA, TZ
 
@@ -40,6 +44,59 @@ SOURCE = "yfinance"
 # session ends, so we move it to the close — the instant a signal could first
 # have used it.
 _CLOSE_HOUR = 16
+
+ATTEMPTS = 3
+BACKOFF_SECONDS = 1.0
+
+# Nothing about the request will change on a second try, so retrying only
+# spends time and rate limit. Anything else — a rate limit, a dropped
+# connection, a 5xx — is worth another go.
+PERMANENT = (
+    yfe.YFTickerMissingError,
+    yfe.YFTzMissingError,
+    yfe.YFPricesMissingError,
+    yfe.YFInvalidPeriodError,
+)
+
+# Indirection so tests do not actually wait.
+_sleep = time.sleep
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def retry(fn: F) -> F:
+    """Retry transient vendor failures with exponential backoff.
+
+    A public API we do not control is the one place in this system that fails
+    for reasons unrelated to our inputs, so it is the one place a retry earns
+    its keep.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        for attempt in range(1, ATTEMPTS + 1):
+            try:
+                return fn(*args, **kwargs)
+            except PERMANENT:
+                raise
+            except Exception:
+                if attempt == ATTEMPTS:
+                    raise
+                _sleep(BACKOFF_SECONDS * 2 ** (attempt - 1))
+        raise AssertionError("unreachable")
+
+    return wrapper  # type: ignore[return-value]
+
+
+@retry
+def _history(ticker: str, start: datetime, end: datetime) -> pd.DataFrame:
+    return yf.Ticker(ticker).history(
+        start=start.date(),
+        end=end.date(),
+        auto_adjust=False,
+        actions=True,
+        raise_errors=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -66,13 +123,7 @@ def fetch(tickers: Sequence[str], start: datetime, end: datetime) -> Fetched:
 
     for ticker in tickers:
         try:
-            raw = yf.Ticker(ticker).history(
-                start=start.date(),
-                end=end.date(),
-                auto_adjust=False,
-                actions=True,
-                raise_errors=True,
-            )
+            raw = _history(ticker, start, end)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not stop the batch
             failed[ticker] = f"{type(exc).__name__}: {exc}"
             continue
