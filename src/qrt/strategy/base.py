@@ -9,8 +9,6 @@ from typing import Any
 
 from qrt.data.view import MarketView
 
-ENTRY_POINT_GROUP = "qrt.strategies"
-
 
 class Strategy(ABC):
     """A pure function of a snapshot, plus a declaration of what it needs.
@@ -45,27 +43,13 @@ class Strategy(ABC):
 
 @dataclass(frozen=True)
 class StrategyRef:
-    """A registered strategy by name, resolvable on any worker that has the
-    package installed."""
+    """A strategy named as a string, as a config file or a queue message
+    carries it. qrt.strategy.load_strategy turns one into an object."""
 
     name: str
     params: Mapping[str, Any] = field(default_factory=dict)
 
 
-# Local runs take either. Remote runs need a StrategyRef, because a worker can
-# only rebuild a strategy it can look up.
+# Code that already has the class passes the object. A config file or a queue
+# message can only carry a name, so those use a StrategyRef.
 StrategySpec = Strategy | StrategyRef
-
-
-def load_strategy(ref: StrategyRef) -> Strategy:
-    """Resolve through entry points and construct with `params`.
-
-    Called when a spec is built so a bad name or bad params fail immediately,
-    and again in the worker that runs it.
-    """
-    raise NotImplementedError
-
-
-def registered() -> Mapping[str, str]:
-    """name -> import path, for `qrt strategies`."""
-    raise NotImplementedError

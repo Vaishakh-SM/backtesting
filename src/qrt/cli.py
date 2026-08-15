@@ -75,8 +75,11 @@ def backtest(
 
 @app.command()
 def strategies() -> None:
-    """List registered strategies."""
-    raise NotImplementedError
+    """List the strategies a config file can name."""
+    from qrt.strategy import STRATEGIES
+
+    for name, cls in sorted(STRATEGIES.items()):
+        typer.echo(f"{name:20} {cls.__module__}.{cls.__qualname__}")
 
 
 if __name__ == "__main__":

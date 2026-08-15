@@ -19,11 +19,6 @@ dependencies = [
 [project.scripts]
 qrt = "qrt.cli:app"
 
-# New strategies are registered here. Installing a package that declares this
-# group makes its strategies resolvable by name on any worker.
-[project.entry-points."qrt.strategies"]
-trailing_return = "qrt.strategy.trailing_return:TrailingReturn"
-
 [dependency-groups]
 dev = [
     "pytest>=8.0",

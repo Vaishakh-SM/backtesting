@@ -60,9 +60,9 @@ class MyStrategy(Strategy):
         return {"AAPL": 0.4, "MSFT": -0.1}
 ```
 
-Register it in `pyproject.toml` under `[project.entry-points."qrt.strategies"]`
-and it can be run by name anywhere, including on a worker that has never heard
-of your code.
+Add one line to `STRATEGIES` in `qrt/strategy/__init__.py` and a config file or
+a queue message can name it. Code that already has the class — a notebook, a
+test — passes the object and skips that entirely.
 
 The view is already bounded in time, so there is no way to write a lookahead
 bug into a strategy. See `docs/adding-a-strategy.md`.
