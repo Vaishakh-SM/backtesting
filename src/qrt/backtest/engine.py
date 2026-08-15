@@ -217,7 +217,8 @@ def _holding_returns(
         if start >= last_available or end <= start:
             continue  # still open at the end of the data; nothing to measure
 
-        gross = _weighted_return(prices, weights, start, end)
+        long_pnl, short_pnl = _leg_returns(prices, weights, start, end)
+        gross = long_pnl + short_pnl
         cost = linear_cost(previous, weights, spec.cost_bps)
         net = gross - cost
         equity *= 1.0 + net
@@ -228,6 +229,8 @@ def _holding_returns(
                 "held_from": start,
                 "held_to": end,
                 "turnover": turnover(previous, weights),
+                "long_pnl": long_pnl,
+                "short_pnl": short_pnl,
                 "gross_return": gross,
                 "cost": cost,
                 "net_return": net,
@@ -239,10 +242,14 @@ def _holding_returns(
     return pl.DataFrame(rows)
 
 
-def _weighted_return(
+def _leg_returns(
     prices: pl.DataFrame, weights: Allocation, start: datetime, end: datetime
-) -> float:
-    """Sum of weight times each name's return over the holding period.
+) -> tuple[float, float]:
+    """What each side of the book earned over the holding period.
+
+    Split rather than summed, because "did both legs contribute" is a question
+    a PM asks of anything calling itself market neutral, and it cannot be
+    recovered from the total afterwards.
 
     Missing prices raise rather than contributing zero. A held name with no
     price is either a data gap or a delisting, and both would otherwise show up
@@ -254,7 +261,7 @@ def _weighted_return(
     if first.is_empty() or last.is_empty():
         raise ValueError(f"no prices at {start} or {end} to mark the book against")
 
-    total = 0.0
+    long_pnl = short_pnl = 0.0
     for ticker, weight in weights.weights.items():
         if ticker not in prices.columns or first[ticker][0] is None or last[ticker][0] is None:
             raise ValueError(
@@ -262,8 +269,12 @@ def _weighted_return(
                 "one end — a gap or a delisting, neither of which is modelled"
             )
         a, b = first[ticker][0], last[ticker][0]
-        total += weight * (b / a - 1.0)
-    return total
+        contribution = weight * (b / a - 1.0)
+        if weight > 0:
+            long_pnl += contribution
+        else:
+            short_pnl += contribution
+    return long_pnl, short_pnl
 
 
 __all__ = ["run_backtest"]

@@ -128,8 +128,16 @@ def report(
     runs: Annotated[list[Path], typer.Argument(help="Result directories from `qrt backtest`.")],
     out: Annotated[Path, typer.Option()] = Path("out/report.html"),
 ) -> None:
-    """Render one report over one or more runs."""
-    raise NotImplementedError
+    """Render one report over one or more runs.
+
+    Reads what `qrt backtest` wrote, so a sweep of parameter sets becomes one
+    document without re-running anything.
+    """
+    from qrt.backtest.store import load_results
+    from qrt.report.html import render
+
+    written = render(load_results(runs), out)
+    typer.echo(f"{written}  {len(runs)} run(s)")
 
 
 @app.command()
