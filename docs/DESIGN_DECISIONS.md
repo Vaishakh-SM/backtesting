@@ -18,14 +18,37 @@ same data.
 
 **One type carries the difference.** A dataset reference holds the path prefix
 and the setup a reader needs. Everything else works without knowing which it is
-talking to, and the layout convention is written down in one function, so
-changing it later means changing one function.
+talking to, and the layout convention lives in one function.
+
+```python
+@dataclass(frozen=True)
+class DatasetRef:
+    root: str                                   # "/data/us-equities" or "s3://bucket/..."
+    storage_options: Mapping[str, str] = ...    # region, credentials, endpoint
+
+    @property
+    def is_remote(self) -> bool:
+        return "://" in self.root               # the root already says which
+```
+
+There is no `LocalDataset` and no `S3Dataset`. The two differ in a prefix and
+some connection settings, and a second type would only be a place for them to
+drift apart.
 
 **Query engines are described, not abstracted.** A dataset reference exposes a
 method per engine returning *configuration*, never a live connection —
-otherwise describing where files live would mean importing every engine. A new
-engine is a new method. There is no query-engine interface, because in practice
-only a few engines exist and a method each is cheaper than a hierarchy.
+otherwise describing where files live would mean importing every engine.
+
+```python
+    def as_polars(self) -> dict[str, Any]:      # kwargs for scan_parquet
+        ...
+    def as_duckdb(self) -> Sequence[str]:       # SQL to run before querying
+        ...                                     # empty for a local root
+```
+
+Supporting another engine is another `as_*` method. There is no query-engine
+interface, because in practice only a few engines exist and a method each is
+cheaper than a hierarchy.
 
 Polars and DuckDB are both wired up. Polars is the default; both read parquet,
 push filters down, and read object storage directly. A test asserts they return
@@ -114,6 +137,19 @@ reader would pick one arbitrarily. The ambiguity is the bug, not the direction.
 `event_ts <= t` and `knowledge_ts <= t`. Bounding only the first would let a
 price restated later leak into a past decision.
 
+**A strategy chooses the shape it works in**, independently of which engine
+fetched the window:
+
+```python
+def read(self, table: str, fmt: Format = "polars") -> Any:
+    if fmt == "polars": return frame
+    if fmt == "pandas": return frame.to_pandas()
+    if fmt == "arrow":  return frame.to_arrow()
+```
+
+Arrow is the common currency between engines, so all three are one call away
+whichever reader was used, and polars costs nothing.
+
 ---
 
 ## Ingestion
@@ -144,6 +180,17 @@ computed on the way if it has any worth showing.
 is handed one and calls it without knowing which it is. Every other choice is
 made once at startup, so those are functions or parameters.
 
+```python
+class Strategy(ABC):
+    lookback_sessions: int                      # a constant satisfies this
+
+    @abstractmethod
+    def allocate(self, view: MarketView) -> Allocation: ...
+```
+
+Two methods' worth of surface. A strategy never fetches data, never writes a
+date filter, and never learns where anything is stored.
+
 **Sizing belongs to the strategy, not the engine.** The engine fetches data,
 walks the calendar and measures what the book earned; it has no opinion about
 how a portfolio is shaped. An engine that ranked into buckets itself would have
@@ -173,6 +220,13 @@ and belongs to the engine along with buffering and querying.
 references work on a grid, because a worker can rebuild them. One written ad
 hoc reports itself as not reproducible rather than pretending otherwise.
 
+```python
+StrategySpec = Strategy | StrategyRef           # the object, or "name" + params
+```
+
+Registration is a line in a read-only mapping, so what exists is whatever that
+file says. Nothing registers itself at import time.
+
 ---
 
 ## The engine
@@ -180,6 +234,29 @@ hoc reports itself as not reproducible rather than pretending otherwise.
 **A spec is what changes the answer; a job is what schedules it.** They are
 separate types so the same spec runs anywhere and still produces the same
 result.
+
+```python
+@dataclass(frozen=True)
+class BacktestSpec:                 # pure data: no connections, no live objects
+    universe: tuple[str, ...]       # so it serialises to JSON and rides a queue
+    strategy: StrategySpec
+    as_of_knowledge: datetime       # resolved once, never per worker
+    ...
+    def content_id(self) -> str | None:
+        """Hash of the canonical form. Same spec, same directory."""
+
+@dataclass(frozen=True)
+class BacktestJob:                  # dispatch only
+    spec: BacktestSpec
+    ref: DatasetRef                 # where this worker reads from
+    output_uri: str
+    run_id: str
+```
+
+That split is what makes a grid work without coordination. `run_backtest(spec,
+ref)` is a pure function, and the content hash decides where the result lands,
+so N workers write to N distinct directories by construction and a redelivered
+job overwrites rather than duplicating.
 
 **There is no capital or notional in a spec.** A weight-based dollar-neutral
 backtest gives the same returns and Sharpe at any size. Notional is a
@@ -213,7 +290,23 @@ because a strategy only ever sees a bounded window.
 hand-computed cases; HTML is not.
 
 **A metric is a function plus a description of itself.** No base class, because
-nothing dispatches on a metric at runtime. Adding one is a function and a line.
+nothing dispatches on a metric at runtime.
+
+```python
+@dataclass(frozen=True)
+class Metric:
+    key: str
+    label: str
+    compute: Callable[[BacktestResult], float]
+    unit: str = "ratio"                    # "ratio" | "percent"
+    higher_is_better: bool | None = True   # None where neither direction is
+
+METRICS = (..., Metric("hit_rate", "Periods positive", hit_rate, unit="percent"))
+```
+
+Adding one is a function and a line. The renderer iterates `METRICS` and never
+names a metric, so a new one appears in the table with a sortable column and
+its own tinting without the report knowing it exists.
 
 **The report is one self-contained file.** No external assets, so it opens from
 an email attachment or from object storage — which is where a report actually
