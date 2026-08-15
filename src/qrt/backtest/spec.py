@@ -41,10 +41,8 @@ class BacktestSpec:
     rebalance_frequency: str = "M"  # "M" | "W" | "D"
     execution_lag_sessions: int = 1  # decide on close of t, hold from the next session
 
-    # Sizing and costs. Flat fields rather than nested objects, so a sweep is
-    # varying numbers on a spec rather than constructing anything.
-    top_fraction: float = 0.2
-    bottom_fraction: float = 0.2
+    # An assumption about the world rather than about the signal, so it stays
+    # here. Sizing does not: a strategy decides what it holds.
     cost_bps: float = 10.0
 
     # Same spec, different code, different answer.

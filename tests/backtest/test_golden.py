@@ -32,6 +32,8 @@ from tests.conftest import actions_table, prices_table, ts
 SIGNAL_START = ts(2024, 3, 1)
 SIGNAL_END = ts(2024, 4, 30)
 
+QUARTERS = {"top_fraction": 0.25, "bottom_fraction": 0.25}
+
 ANCHORS = {
     "AAPL": (100.0, 120.0),
     "MSFT": (100.0, 110.0),
@@ -66,10 +68,8 @@ def spec_for(**overrides: object) -> BacktestSpec:
         "universe": ("AAPL", "MSFT", "NVDA", "XOM"),
         "start": ts(2024, 4, 1),
         "end": ts(2024, 6, 28),
-        "strategy": TrailingReturn(lookback_sessions=20, direction=1),
+        "strategy": TrailingReturn(lookback_sessions=20, direction=1, **QUARTERS),
         "as_of_knowledge": ts(2026, 1, 1),
-        "top_fraction": 0.25,
-        "bottom_fraction": 0.25,
         "cost_bps": 0.0,
         "rebalance_frequency": "M",
     }
@@ -101,7 +101,7 @@ def test_weights_are_neutral_and_unlevered(seeded: DatasetRef) -> None:
 def test_reversal_is_momentum_with_the_book_flipped(seeded: DatasetRef) -> None:
     """Same data, direction=-1. The scores negate, so the buckets swap."""
     momentum = run_backtest(spec_for(), seeded)
-    reversal = run_backtest(spec_for(strategy=TrailingReturn(20, -1)), seeded)
+    reversal = run_backtest(spec_for(strategy=TrailingReturn(20, -1, **QUARTERS)), seeded)
 
     long_leg = reversal.positions.filter(pl.col("weight") > 0)["ticker"].unique()
     assert set(long_leg) == {"XOM"}
@@ -174,7 +174,7 @@ def test_rebalances_without_enough_history_are_skipped(seeded: DatasetRef) -> No
     session 83, so a strategy wanting 100 sessions of history cannot be scored
     there — and must not be scored on a short window as though it had been.
     """
-    result = run_backtest(spec_for(strategy=TrailingReturn(100, 1)), seeded)
+    result = run_backtest(spec_for(strategy=TrailingReturn(100, 1, **QUARTERS)), seeded)
 
     assert result.scores["rebalance_ts"].min() > ts(2024, 4, 30)
 
@@ -185,7 +185,7 @@ def test_a_backtest_that_ends_before_it_can_be_marked_says_so(seeded: DatasetRef
     empty result would look like a strategy that simply did nothing.
     """
     with pytest.raises(ValueError, match="no holding period can be measured"):
-        run_backtest(spec_for(strategy=TrailingReturn(120, 1)), seeded)
+        run_backtest(spec_for(strategy=TrailingReturn(120, 1, **QUARTERS)), seeded)
 
 
 def test_a_universe_too_small_to_split_is_rejected(seeded: DatasetRef) -> None:
@@ -196,8 +196,7 @@ def test_a_universe_too_small_to_split_is_rejected(seeded: DatasetRef) -> None:
         run_backtest(
             spec_for(
                 universe=("AAPL", "MSFT", "NVDA"),
-                top_fraction=0.9,
-                bottom_fraction=0.9,
+                strategy=TrailingReturn(20, 1, top_fraction=0.9, bottom_fraction=0.9),
             ),
             seeded,
         )

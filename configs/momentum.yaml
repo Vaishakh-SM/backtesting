@@ -6,6 +6,8 @@ strategy:
   params:
     lookback_sessions: 60
     direction: 1
+    top_fraction: 0.2
+    bottom_fraction: 0.2
 
 universe: us-liquid-30
 

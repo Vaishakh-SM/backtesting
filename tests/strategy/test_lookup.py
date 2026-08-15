@@ -60,7 +60,10 @@ def test_a_known_strategy_reports_its_name_and_parameters() -> None:
     """Round trip: an object built here can be described as a reference, and
     that reference rebuilds an equivalent object on another machine."""
     ref = as_ref(TrailingReturn(lookback_sessions=20, direction=-1))
-    assert ref == StrategyRef("trailing_return", {"lookback_sessions": 20, "direction": -1})
+    assert ref == StrategyRef(
+        "trailing_return",
+        {"lookback_sessions": 20, "direction": -1, "top_fraction": 0.2, "bottom_fraction": 0.2},
+    )
 
     rebuilt = load_strategy(ref)
     assert rebuilt.lookback_sessions == 20

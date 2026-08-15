@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 import polars as pl
 
 from qrt.backtest.calendar import next_session, rebalance_timestamps, sessions_before
-from qrt.backtest.portfolio import TargetWeights, linear_cost, rank_weights, turnover
+from qrt.backtest.portfolio import Allocation, linear_cost, turnover
 from qrt.backtest.spec import BacktestResult, BacktestSpec
+from qrt.conventions import TZ
 from qrt.data.dataset import DatasetRef, MissingData
 from qrt.data.polars_reader import earliest_knowledge_ts, read_window
 from qrt.data.schema import (
@@ -43,27 +45,26 @@ def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
 
     scores: list[dict[str, object]] = []
     positions: list[dict[str, object]] = []
-    book: list[tuple[datetime, TargetWeights]] = []
+    book: list[tuple[datetime, Allocation]] = []
 
     for rebalance_ts in rebalances:
         window = _signal_window(ref, spec, strategy, rebalance_ts)
         if window is None:
             continue  # not enough history behind this date yet
 
-        signal = strategy.generate_signal(window)
-        if not signal:
+        allocation = strategy.allocate(window)
+        if not allocation.weights:
             continue
 
-        weights = rank_weights(signal, spec.top_fraction, spec.bottom_fraction)
-
         scores += [
-            {"rebalance_ts": rebalance_ts, "ticker": t, "score": s} for t, s in signal.items()
+            {"rebalance_ts": rebalance_ts, "ticker": t, "score": s}
+            for t, s in allocation.scores.items()
         ]
         positions += [
             {"rebalance_ts": rebalance_ts, "ticker": t, "weight": w}
-            for t, w in weights.weights.items()
+            for t, w in allocation.weights.items()
         ]
-        book.append((rebalance_ts, weights))
+        book.append((rebalance_ts, allocation))
 
     if not book:
         raise ValueError(
@@ -77,10 +78,19 @@ def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
         spec=spec,
         knowledge_ts=spec.as_of_knowledge,
         reproducible=spec.is_reproducible(),
-        scores=pl.DataFrame(scores),
+        scores=pl.DataFrame(scores, schema=_SCORE_SCHEMA),
         positions=pl.DataFrame(positions),
         returns=returns,
     )
+
+
+# Spelled out so a strategy that exposes no scores still yields a typed frame
+# rather than an untyped empty one the report has to special-case.
+_SCORE_SCHEMA: Mapping[str, pl.DataType] = {
+    "rebalance_ts": pl.Datetime("us", TZ),
+    "ticker": pl.String(),
+    "score": pl.Float64(),
+}
 
 
 def _knowledge_cutoff(spec: BacktestSpec, rebalance_ts: datetime) -> datetime:
@@ -163,7 +173,7 @@ def _holding_returns(
     ref: DatasetRef,
     spec: BacktestSpec,
     strategy: Strategy,
-    book: list[tuple[datetime, TargetWeights]],
+    book: list[tuple[datetime, Allocation]],
 ) -> pl.DataFrame:
     """P&L of each held position, from one execution to the next.
 
@@ -199,7 +209,7 @@ def _holding_returns(
 
     rows = []
     equity = 1.0
-    previous: TargetWeights | None = None
+    previous: Allocation | None = None
 
     for i, (rebalance_ts, weights) in enumerate(book):
         start = executions[i]
@@ -230,7 +240,7 @@ def _holding_returns(
 
 
 def _weighted_return(
-    prices: pl.DataFrame, weights: TargetWeights, start: datetime, end: datetime
+    prices: pl.DataFrame, weights: Allocation, start: datetime, end: datetime
 ) -> float:
     """Sum of weight times each name's return over the holding period.
 

@@ -1,28 +1,40 @@
-"""Turning scores into positions, and charging for the trading.
+"""What a strategy hands back, and helpers for building it.
 
-Separate from the strategy on purpose: one signal has to be runnable under
-several sizings and cost assumptions, which is what makes a sensitivity grid
-cheap to produce. Keeping this out of the strategy is what allows that.
+A strategy answers "given this moment, what should the book hold". Weight is
+not a function of score once anything real is involved — volatility scaling,
+position caps, correlated names, sector neutrality and turnover all make a
+higher-scoring name worth less. That decision belongs to the strategy, which is
+why the engine takes an Allocation rather than building one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _TOLERANCE = 1e-9
 
 
 @dataclass(frozen=True)
-class TargetWeights:
-    """Weights as a fraction of gross notional.
+class Allocation:
+    """A target book, and optionally the reasoning behind it.
 
-    The invariants are checked here because they are exactly what breaks
-    silently: a book that has quietly stopped being neutral, or that has
-    levered itself, still produces a plausible equity curve.
+    `weights` are fractions of gross notional, not dollars. A weight-based
+    dollar-neutral book gives identical returns at any size, so the portfolio
+    value enters only at reporting.
+
+    `scores` are whatever the strategy computed on the way — carried so a
+    report can show where construction overrode the signal, and ignored by
+    everything else. Optional, because not every strategy has a meaningful
+    intermediate.
+
+    The invariants are checked here because they are what breaks silently: a
+    book that has quietly stopped being neutral, or has levered itself, still
+    produces a plausible equity curve.
     """
 
     weights: Mapping[str, float]
+    scores: Mapping[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.weights:
@@ -39,18 +51,22 @@ def rank_weights(
     scores: Mapping[str, float],
     top_fraction: float = 0.2,
     bottom_fraction: float = 0.2,
-) -> TargetWeights:
+) -> Allocation:
     """Long the top fraction, short the bottom fraction, equal-weighted.
 
-    Ties break by ticker, so a rerun on the same data gives the same book. The
-    alternative is a portfolio that changes between runs for no reason anyone
-    can see.
+    A helper for strategies, not something the engine applies. Only the
+    ordering of `scores` is used, so a name scoring +61% and one scoring +14%
+    are held identically — that is what equal-weighted means, and a strategy
+    wanting conviction to matter should size differently.
 
-    Each leg carries half the gross, so the result is dollar neutral whether or
-    not the legs hold the same number of names.
+    Ties break by ticker, so a rerun on the same data gives the same book
+    rather than one that changes for no reason a reader can see.
+
+    Each leg carries half the gross, so the result is neutral whether or not
+    the legs hold the same number of names.
     """
     if not scores:
-        return TargetWeights({})
+        return Allocation({})
 
     ranked = sorted(scores, key=lambda ticker: (-scores[ticker], ticker))
 
@@ -63,10 +79,13 @@ def rank_weights(
         )
 
     longs, shorts = ranked[:n_long], ranked[-n_short:]
-    return TargetWeights({t: 0.5 / n_long for t in longs} | {t: -0.5 / n_short for t in shorts})
+    return Allocation(
+        weights={t: 0.5 / n_long for t in longs} | {t: -0.5 / n_short for t in shorts},
+        scores=dict(scores),
+    )
 
 
-def turnover(previous: TargetWeights | None, new: TargetWeights) -> float:
+def turnover(previous: Allocation | None, new: Allocation) -> float:
     """Gross notional traded, as a fraction of book size.
 
     Every name in the new book counts against a starting position of zero, so
@@ -79,7 +98,7 @@ def turnover(previous: TargetWeights | None, new: TargetWeights) -> float:
     )
 
 
-def linear_cost(previous: TargetWeights | None, new: TargetWeights, bps: float) -> float:
+def linear_cost(previous: Allocation | None, new: Allocation, bps: float) -> float:
     """Turnover times a fixed rate, as a fraction of book size.
 
     No market impact and no size dependence, so this says nothing about

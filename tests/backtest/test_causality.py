@@ -50,10 +50,10 @@ def spec() -> BacktestSpec:
         universe=UNIVERSE,
         start=ts(2024, 3, 1),
         end=ts(2024, 5, 31),
-        strategy=TrailingReturn(lookback_sessions=20, direction=1),
+        strategy=TrailingReturn(
+            lookback_sessions=20, direction=1, top_fraction=0.25, bottom_fraction=0.25
+        ),
         as_of_knowledge=ts(2026, 12, 31),
-        top_fraction=0.25,
-        bottom_fraction=0.25,
     )
 
 

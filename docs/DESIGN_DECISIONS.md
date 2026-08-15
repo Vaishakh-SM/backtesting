@@ -160,14 +160,29 @@ and faster. Switch when rebalances become frequent enough that 14e dominates.
 Strategy code does not change either way, because a strategy only ever sees a
 MarketView.
 
-15. Strategies return a plain mapping of ticker to score. There is no Signal
-type, because it would only add a timestamp the caller already has.
+15. A strategy answers one question: given this moment, what should the book
+hold. It returns an Allocation — weights as fractions of gross notional, plus
+the scores it computed on the way if it has any worth showing.
 
-15a. Portfolio construction and costs are not built yet. Current focus is
-loading data reliably, and running a backtest as a unit of work that can be
-scheduled on a grid. Sizing and cost parameters will sit on the spec as plain
-fields when they are added, so that one signal can be run under several
-assumptions.
+15a. Sizing belongs to the strategy, not the engine. The engine fetches data,
+walks the rebalance calendar and measures what the book earned; it has no
+opinion about how a portfolio is shaped. An engine that called rank_weights
+itself would have decided that portfolios are made by ranking into buckets,
+which is a research choice wearing infrastructure clothes.
+
+15b. Weight is not a function of score. Even with equal-weighted buckets, a
+name up 61% and one up 14% are held identically, while rank six and rank seven
+differ by an entire position for a fraction of a percent. Volatility scaling,
+position caps, correlation, sector limits and turnover all make a
+higher-scoring name worth holding less. That is why sizing is a decision rather
+than a calculation.
+
+15c. Scores travel with the allocation so a report can show both. Where they
+diverge is where portfolio construction overrode the signal, which is worth
+being able to see.
+
+15d. Costs stay on the spec. They are an assumption about the world rather than
+about the signal, so one strategy should be runnable under several.
 
 16. There is no capital or notional in the spec. A weight-based dollar-neutral
 backtest gives the same returns and Sharpe at any size. Notional is only used to
