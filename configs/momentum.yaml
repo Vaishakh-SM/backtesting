@@ -4,7 +4,7 @@
 strategy:
   name: trailing_return
   params:
-    lookback_days: 60
+    lookback_sessions: 60
     direction: 1
 
 universe: us-liquid-30

@@ -156,6 +156,16 @@ introduced without redesign, but it is populated with a constant list here.
 
 ## Backtest conventions
 
+**A strategy's lookback is counted in trading sessions, not calendar days.**
+Sixty sessions back from 28 June 2024 is 3 April, spanning 86 calendar days. A
+window asked for as "sixty days" of calendar time would have contained about
+forty-one sessions — two thirds of the intended history, with nothing looking
+wrong in the output.
+
+Strategies declare the count; the engine turns it into a window bound through
+the trading calendar. Strategies never touch the calendar themselves, because
+delivering data is the engine's job.
+
 **Signals are computed on the close of date `t`; positions are held from `t+1`.**
 The one-day execution lag is configurable but defaults to 1. Assuming execution
 at the same close used to generate the signal is the single most common way a

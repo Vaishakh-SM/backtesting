@@ -7,7 +7,6 @@ direction=+1 buys the winners, direction=-1 buys the losers.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import timedelta
 
 import polars as pl
 
@@ -18,17 +17,17 @@ from qrt.strategy.base import Strategy
 
 
 class TrailingReturn(Strategy):
-    def __init__(self, lookback_days: int = 60, direction: int = 1) -> None:
+    def __init__(self, lookback_sessions: int = 60, direction: int = 1) -> None:
         if direction not in (1, -1):
             raise ValueError("direction must be +1 (momentum) or -1 (reversal)")
-        self.lookback_days = lookback_days
+        if lookback_sessions < 1:
+            raise ValueError("lookback_sessions must be at least 1")
+        self._lookback_sessions = lookback_sessions
         self.direction = direction
 
     @property
-    def lookback(self) -> timedelta:
-        # Calendar days. The window is a lower bound on what the engine
-        # fetches, so asking for more calendar days than trading days is safe.
-        return timedelta(days=self.lookback_days)
+    def lookback_sessions(self) -> int:
+        return self._lookback_sessions
 
     def generate_signal(self, view: MarketView) -> Mapping[str, float]:
         prices = adjust(view.read(PRICES), view.read(ACTIONS))

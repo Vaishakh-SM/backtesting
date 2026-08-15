@@ -51,8 +51,8 @@ Subclass `Strategy`, declare how much history you need, return scores:
 ```python
 class MyStrategy(Strategy):
     @property
-    def lookback(self) -> timedelta:
-        return timedelta(days=30)
+    def lookback_sessions(self) -> int:
+        return 30
 
     def generate_signal(self, view: MarketView) -> Mapping[str, float]:
         prices = adjust(view.read(PRICES), view.read(ACTIONS))

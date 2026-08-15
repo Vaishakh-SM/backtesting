@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from qrt.backtest.calendar import next_session, rebalance_timestamps, trading_days
+from qrt.backtest.calendar import (
+    next_session,
+    rebalance_timestamps,
+    sessions_before,
+    trading_days,
+)
 from tests.conftest import ts
 
 
@@ -91,6 +96,39 @@ def test_no_lag_means_the_same_close() -> None:
 
 def test_a_longer_lag_compounds() -> None:
     assert next_session(ts(2024, 7, 3), count=2).strftime("%Y-%m-%d") == "2024-07-08"
+
+
+def test_the_window_bound_leaves_exactly_that_many_sessions() -> None:
+    """The contract the engine relies on. Readers bound windows as
+    (since, as_of], so `count` sessions must fall strictly after the returned
+    instant — counted here rather than asserted as a date, because a
+    hand-guessed date proves nothing about the invariant.
+    """
+    end = ts(2024, 6, 28)
+    for count in (1, 5, 60, 252):
+        since = sessions_before(end, count)
+        in_window = [d for d in trading_days(since, end) if d > since]
+        assert len(in_window) == count
+
+
+def test_sessions_are_not_calendar_days() -> None:
+    """Sixty sessions back from 28 June 2024 spans 86 calendar days. A strategy
+    asking for a 60-day window in calendar time would have received about
+    forty-one sessions, and nothing would have looked wrong."""
+    end = ts(2024, 6, 28)
+    assert (end - sessions_before(end, 60)).days == 86
+
+
+def test_stepping_back_skips_weekends_and_holidays() -> None:
+    """One session before Monday 8 July is Friday the 5th; one before the 5th
+    is the 3rd, since the 4th was Independence Day."""
+    assert sessions_before(ts(2024, 7, 8), 1).strftime("%Y-%m-%d") == "2024-07-05"
+    assert sessions_before(ts(2024, 7, 5), 1).strftime("%Y-%m-%d") == "2024-07-03"
+
+
+def test_stepping_back_and_forward_are_inverses() -> None:
+    start = ts(2024, 6, 28)
+    assert next_session(sessions_before(start, 10), 10) == start
 
 
 def test_an_unknown_frequency_is_rejected() -> None:

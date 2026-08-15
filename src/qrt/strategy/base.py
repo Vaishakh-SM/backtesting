@@ -5,7 +5,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import Any
 
 from qrt.data.view import MarketView
@@ -27,11 +26,16 @@ class Strategy(ABC):
 
     @property
     @abstractmethod
-    def lookback(self) -> timedelta:
-        """How far back generate_signal needs to see.
+    def lookback_sessions(self) -> int:
+        """How many sessions of history generate_signal needs before the
+        current one.
 
-        The engine uses it as the lower bound of the query it runs for each
-        rebalance, and to skip rebalances without enough history yet.
+        Sessions, not calendar days. Sixty calendar days is about forty-one
+        sessions, so a strategy asking in calendar time would quietly receive
+        two thirds of the history it meant — and nothing would look wrong.
+
+        The engine turns this into a window bound through the trading calendar,
+        and skips rebalances that do not have this much history behind them.
         """
 
     @abstractmethod

@@ -70,7 +70,28 @@ def next_session(after: datetime, count: int = 1) -> datetime:
     of 0 means executing at the same close the signal was computed on, which
     is the most common way a backtest reports impossible performance.
     """
-    day = pd.Timestamp(after.date())
-    for _ in range(count):
-        day = _calendar().next_session(day)
+    return _shift(after, count)
+
+
+def sessions_before(before: datetime, count: int) -> datetime:
+    """The close `count` sessions before `before`, which must itself be a session.
+
+    The guarantee, which is what a window bound needs: exactly `count` sessions
+    fall strictly after the returned instant, up to and including `before`.
+    Readers bound windows as (since, as_of], so this drops straight in.
+
+    Counting sessions rather than calendar time is the point. Sixty calendar
+    days is about forty-one sessions, so a strategy asking in calendar time
+    would quietly receive two thirds of the history it meant.
+    """
+    return _shift(before, -count)
+
+
+def _shift(from_: datetime, sessions: int) -> datetime:
+    calendar = _calendar()
+    step = calendar.next_session if sessions > 0 else calendar.previous_session
+
+    day = pd.Timestamp(from_.date())
+    for _ in range(abs(sessions)):
+        day = step(day)
     return _close(day)
