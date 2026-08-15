@@ -11,9 +11,6 @@ import pytest
 
 from qrt.data.schema import TZ
 from qrt.data.yahoo import _actions, _event_ts, _prices
-from tests.conftest import ts
-
-KNOWLEDGE = ts(2026, 1, 10, hour=6)
 
 
 def yahoo_frame() -> pd.DataFrame:
@@ -45,24 +42,32 @@ def test_bars_are_stamped_at_the_close_not_midnight() -> None:
     assert str(stamped.iloc[0].tzinfo) == TZ
 
 
+def test_a_first_observation_is_stamped_at_its_own_close() -> None:
+    """Vendor rows arrive as first observations, published when the session
+    ended. Ingestion re-stamps only what turns out to be a correction."""
+    raw = yahoo_frame()
+    out = _prices(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL")
+    assert out["knowledge_ts"].tolist() == out["event_ts"].tolist()
+
+
 def test_adjusted_close_is_not_stored() -> None:
     """Keeping it would invite using a number that Yahoo restates on every
     distribution, which is the reproducibility hole we are avoiding."""
     raw = yahoo_frame()
-    out = _prices(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL", KNOWLEDGE)
+    out = _prices(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL")
     assert "adj_close" not in out.columns
     assert out["close"].tolist() == [10.2, 11.2, 12.2]
 
 
 def test_volume_becomes_an_integer() -> None:
     raw = yahoo_frame()
-    out = _prices(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL", KNOWLEDGE)
+    out = _prices(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL")
     assert out["volume"].dtype == "int64"
 
 
 def test_actions_split_into_kinds_and_skip_ordinary_days() -> None:
     raw = yahoo_frame()
-    out = _actions(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL", KNOWLEDGE)
+    out = _actions(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL")
 
     assert len(out) == 2
     by_kind = dict(zip(out["kind"], out["value"], strict=True))
@@ -72,7 +77,7 @@ def test_actions_split_into_kinds_and_skip_ordinary_days() -> None:
 def test_a_quiet_ticker_produces_no_action_rows() -> None:
     raw = yahoo_frame()
     raw[["Dividends", "Stock Splits"]] = 0.0
-    out = _actions(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL", KNOWLEDGE)
+    out = _actions(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL")
     assert out.empty
 
 
@@ -80,5 +85,5 @@ def test_a_quiet_ticker_produces_no_action_rows() -> None:
 def test_missing_action_columns_are_tolerated(column: str) -> None:
     """Not every yfinance response carries both."""
     raw = yahoo_frame().drop(columns=[column])
-    out = _actions(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL", KNOWLEDGE)
+    out = _actions(raw, _event_ts(pd.DatetimeIndex(raw.index)), "AAPL")
     assert len(out) == 1

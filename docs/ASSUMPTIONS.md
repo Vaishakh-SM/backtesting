@@ -59,24 +59,35 @@ date `t` sees `event_ts <= t` *and* `knowledge_ts <= t`. Bounding only the first
 allows a subtler form of lookahead: using a restated price that did not exist at
 the time of the decision.
 
-**Backfilled history carries no real knowledge times, and this limits what the
-knowledge axis can do for it.** `knowledge_ts` is stamped with when *we* learned
-a row, which for a backfill is the moment the backfill ran. Yahoo does not
-publish when it first asserted a value, so there is no way to recover the true
-history of belief. That stamp is honest — we genuinely knew nothing in 2020 —
-but it means per-rebalance knowledge filtering over backfilled data would
-correctly return nothing at all.
+**A first observation is stamped at the time it was published, not the time we
+happened to fetch it.** For daily exchange prices those are the same thing in
+substance: the bar for a given session really was public at that session's
+close, with no revision lag. Stamping it there models publication rather than
+inventing it, and it is what lets a point-in-time backtest run over backfilled
+history at all.
 
-So the knowledge axis protects runs going forward, where observations
-accumulate over time and restatements are recorded as they arrive. For a
-backtest over freshly backfilled history, the event axis does all the work and
-the knowledge cutoff should be set at or after the backfill.
+This assumption is specific to exchange prices. It would be false for anything
+with a genuine reporting lag — earnings, restated fundamentals, index
+membership — where the publication date is weeks after the period described,
+and where a stamp taken from the event date would be a fabrication.
 
-Rather than let that fail silently as empty windows, the engine compares the
-earliest `knowledge_ts` in the store against the first rebalance and refuses the
-run with an explanation. Fabricating plausible knowledge times instead was
-considered and rejected: it would make the store assert things about the past
-that we never actually believed, which defeats the point of recording belief.
+**A restatement is stamped at the time we learned it.** Yahoo restates prices
+after a split, so a re-fetch returns different numbers for periods we already
+hold. Those rows carry the ingestion time. Stamping them at their event
+timestamp would assert that we knew split-adjusted 2020 prices in 2020, which
+would let a backtest see the future through the knowledge axis rather than the
+event axis — a subtler lookahead than the usual kind, and harder to notice.
+
+**Ingestion therefore compares against the store before writing.** Rows
+identical to what we already hold are not written. A re-run over unchanged data
+appends nothing, so re-running is genuinely idempotent, and the log contains
+exactly the first observations plus the real corrections.
+
+**What this does not give us is Yahoo's own revision history.** We record when
+*we* first saw a value and when we saw it change. If Yahoo silently corrected a
+figure between our runs, we date that correction to our run rather than to
+theirs. A vendor with a proper point-in-time feed would supply the real
+publication timestamps; the schema is already shaped to take them.
 
 **The ingestion job is the only writer.** Nothing else in the system writes to
 the store — backtests and reports are strictly read-only. This is what makes the
@@ -93,11 +104,11 @@ migrations — a persistence layer built to serve exactly one caller.
 the writer and inherited by readers from the parquet footer. A malformed column
 fails loudly on read rather than being silently coerced.
 
-**Re-running an ingestion for a period already covered appends duplicate
-observations rather than failing.** Under append-only semantics this is correct —
-it is a new observation that happens to agree with the old one — and reads
-deduplicate anyway. The cost is storage growth, accepted as negligible at this
-scale.
+**Re-running an ingestion for a period already covered writes nothing.** Rows
+that match what the store already holds are dropped at write time, so a re-run
+is idempotent rather than appending agreeing duplicates for reads to hide.
+Verified against the live vendor: a second full run over ten years of thirty
+tickers appends zero rows.
 
 **OHLCV and corporate actions are stored as separate tables, and dividend
 adjustment is derived in code.** Storing a vendor's adjusted close directly

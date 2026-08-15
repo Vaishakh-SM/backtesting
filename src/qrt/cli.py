@@ -51,8 +51,9 @@ def ingest(
         tickers=cfg.tickers,
         start=_parse_day(start, hour=0),
         end=_parse_day(end, hour=23) if end else now,
-        # Stamped with the wall clock, truthfully: this is when we learned it.
-        knowledge_ts=now,
+        # Only used to stamp restatements and name the batch: first observations
+        # are stamped at the bar close, when they were published.
+        ingested_at=now,
     )
 
     typer.echo(summary)

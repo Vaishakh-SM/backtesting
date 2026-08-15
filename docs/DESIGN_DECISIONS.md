@@ -37,6 +37,12 @@ constants fail at import.
 relationships and query building are never used, because queries go through SQL
 or Polars directly.
 
+9b. Each table declares what identifies a row and what counts as its content.
+Two rows sharing a key are the same fact asserted twice, and only the newest is
+read. Actions key on kind as well as ticker and date, because a dividend and a
+split can share an ex-date and are two facts about that day rather than one
+correcting the other.
+
 10. Every row carries two timestamps. event_ts is what the row is about,
 knowledge_ts is when we learned it. Rows are appended, never updated. A
 restatement is a new row.
@@ -55,12 +61,53 @@ series. A batch covering only recent bars would leave the store mixing two
 conventions, and a lookback window crossing the boundary would compute a
 return that never happened.
 
-10d. knowledge_ts is stamped with when we actually learned a row. For
-backfilled history that is the moment of the backfill, which is honest but
-means the knowledge axis offers no protection for backfilled data. The engine
-detects this and refuses rather than silently returning empty windows.
-Fabricating plausible knowledge times was rejected — a store that asserts
-beliefs we never held is worse than one that admits it does not know.
+10d. knowledge_ts is decided per row, not per ingestion batch:
+
+  - a row we have not seen before is stamped at its event_ts
+  - a row that contradicts one we hold is stamped at the ingestion time
+  - a row identical to one we hold is not written at all
+
+10e. First observations are stamped at event_ts because exchange prices are
+published at the close with no revision lag. The bar for a given day really
+was public that day, so this models publication rather than inventing it. The
+same rule would be a lie for data with a genuine reporting lag, such as
+earnings, which is not published on the day it describes.
+
+10f. The lie the second rule avoids is the important one. Yahoo restates prices
+after a split, so a re-fetch in 2026 returns different 2020 prices. Stamping
+those at their event_ts would claim we knew the split-adjusted numbers in 2020,
+which would let a point-in-time backtest see the future through the knowledge
+axis. Comparing against the store at write time is what separates the two
+cases.
+
+10g. Dropping unchanged rows makes a re-run genuinely idempotent rather than
+appending duplicates and relying on reads to hide them. It also means the log
+holds exactly the first observations plus the real corrections, and removes the
+storage cost of re-fetching full history.
+
+8a. Vendor calls are retried with exponential backoff; nothing else is. A
+public API we do not control is the only part of this system that fails for
+reasons unrelated to our inputs.
+
+8b. A symbol that does not exist is not retried. Nothing about the request will
+change on a second attempt, so retrying only spends time and rate limit. The
+distinction comes from yfinance's own exception types rather than from matching
+on error text.
+
+10i. Backdating a correction is allowed. Writing a row with a knowledge_ts
+earlier than now is a real operation: a vendor with a genuine point-in-time
+feed supplies real publication times, and a fix to our own normalisation may be
+a value that truly was available at the time.
+
+10j. What is refused is a correction carrying the same knowledge_ts as the row
+it corrects. Two rows sharing a key and an instant have no defined winner, so a
+reader would pick one arbitrarily. The ambiguity is the bug, not the direction,
+so the check is on ties rather than on backdating.
+
+10h. Comparison is exact, not tolerance-based. A tolerance would silently
+swallow small genuine corrections. Parquet round-trips f64 exactly, and a
+second ingestion of unchanged data writes zero rows in practice, so there is no
+float jitter to absorb.
 
 11. Reads are bounded on both timestamps. A decision made at time t sees only
 event_ts <= t and knowledge_ts <= t. Bounding only the first would let a price

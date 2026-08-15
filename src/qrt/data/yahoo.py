@@ -49,13 +49,13 @@ class Fetched:
     failed: dict[str, str]
 
 
-def fetch(
-    tickers: Sequence[str],
-    start: datetime,
-    end: datetime,
-    knowledge_ts: datetime,
-) -> Fetched:
+def fetch(tickers: Sequence[str], start: datetime, end: datetime) -> Fetched:
     """Fetch raw OHLCV and corporate actions, normalised to our schemas.
+
+    Rows come back stamped with `knowledge_ts = event_ts`, i.e. as first
+    observations published at the close. Ingestion re-stamps anything that
+    turns out to contradict what the store already holds — see
+    docs/DESIGN_DECISIONS.md 10e.
 
     One request per ticker rather than a batched download, so a single bad
     symbol degrades to a recorded failure instead of taking the batch with it.
@@ -82,8 +82,8 @@ def fetch(
             continue
 
         event_ts = _event_ts(pd.DatetimeIndex(raw.index))
-        price_frames.append(_prices(raw, event_ts, ticker, knowledge_ts))
-        action_frames.append(_actions(raw, event_ts, ticker, knowledge_ts))
+        price_frames.append(_prices(raw, event_ts, ticker))
+        action_frames.append(_actions(raw, event_ts, ticker))
 
     return Fetched(
         prices=_to_arrow(price_frames, PRICES_SCHEMA),
@@ -102,9 +102,7 @@ def _event_ts(index: pd.DatetimeIndex) -> pd.Series:
     return pd.Series(local.normalize() + pd.Timedelta(hours=_CLOSE_HOUR), index=index)
 
 
-def _prices(
-    raw: pd.DataFrame, event_ts: pd.Series, ticker: str, knowledge_ts: datetime
-) -> pd.DataFrame:
+def _prices(raw: pd.DataFrame, event_ts: pd.Series, ticker: str) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "ticker": ticker,
@@ -115,16 +113,14 @@ def _prices(
             "close": raw["Close"].astype("float64").to_numpy(),
             # Yahoo occasionally reports volume as float; int64 is the contract.
             "volume": raw["Volume"].fillna(0).astype("int64").to_numpy(),
-            "knowledge_ts": knowledge_ts,
+            "knowledge_ts": event_ts.to_numpy(),
             "source": SOURCE,
             "event_year": event_ts.dt.year.astype("int32").to_numpy(),
         }
     )
 
 
-def _actions(
-    raw: pd.DataFrame, event_ts: pd.Series, ticker: str, knowledge_ts: datetime
-) -> pd.DataFrame:
+def _actions(raw: pd.DataFrame, event_ts: pd.Series, ticker: str) -> pd.DataFrame:
     parts = []
 
     for column, kind in (("Dividends", "dividend"), ("Stock Splits", "split")):
@@ -140,7 +136,7 @@ def _actions(
                     "event_ts": event_ts[mask].to_numpy(),
                     "kind": kind,
                     "value": raw.loc[mask, column].astype("float64").to_numpy(),
-                    "knowledge_ts": knowledge_ts,
+                    "knowledge_ts": event_ts[mask].to_numpy(),
                     "source": SOURCE,
                     "event_year": event_ts[mask].dt.year.astype("int32").to_numpy(),
                 }

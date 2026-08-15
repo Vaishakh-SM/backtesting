@@ -10,22 +10,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import polars as pl
 import pytest
 
 from qrt.data.dataset import DatasetRef
-from qrt.data.ingest import ingest, latest_knowledge_ts
+from qrt.data.ingest import ingest
+from qrt.data.polars_reader import latest_knowledge_ts
 from qrt.data.schema import PRICES, UNIVERSE
 from qrt.data.writer import append
 from qrt.data.yahoo import Fetched
-from tests.conftest import actions_table, prices_table, ts
+from tests.conftest import actions_table, prices_table, read_table, ts
 
 BATCH_1 = ts(2026, 1, 10, hour=6)
 BATCH_2 = ts(2026, 6, 20, hour=6)
-
-
-def read(ref: DatasetRef, table: str) -> pl.DataFrame:
-    return pl.scan_parquet(ref.scan(table), **ref.as_polars()).collect()
 
 
 def test_reingesting_same_period_keeps_both_observations(store: DatasetRef) -> None:
@@ -35,7 +31,7 @@ def test_reingesting_same_period_keeps_both_observations(store: DatasetRef) -> N
     append(store, PRICES, prices_table(bar, BATCH_1), BATCH_1)
     append(store, PRICES, prices_table(bar, BATCH_2), BATCH_2)
 
-    rows = read(store, PRICES)
+    rows = read_table(store, PRICES)
     assert rows.height == 2
     assert sorted(rows["knowledge_ts"].to_list()) == [BATCH_1, BATCH_2]
 
@@ -49,7 +45,7 @@ def test_restatement_keeps_the_superseded_value(store: DatasetRef) -> None:
     append(store, PRICES, prices_table([("AAPL", ts(2026, 1, 5), 100.0)], BATCH_1), BATCH_1)
     append(store, PRICES, prices_table([("AAPL", ts(2026, 1, 5), 25.0)], BATCH_2), BATCH_2)
 
-    rows = read(store, PRICES).sort("knowledge_ts")
+    rows = read_table(store, PRICES).sort("knowledge_ts")
     assert rows["close"].to_list() == [100.0, 25.0]
 
 
@@ -101,10 +97,12 @@ def fake_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for yfinance. Everything downstream of it stays real."""
     from qrt.data import ingest as ingest_module
 
-    def fetch(tickers, start, end, knowledge_ts):  # type: ignore[no-untyped-def]
+    def fetch(tickers, start, end):  # type: ignore[no-untyped-def]
+        # knowledge_ts=None stamps each row at its own close, which is what a
+        # real vendor fetch produces before reconciliation.
         return Fetched(
-            prices=prices_table([("AAPL", ts(2026, 1, 5), 100.0)], knowledge_ts),
-            actions=actions_table([("AAPL", ts(2026, 1, 5), "split", 4.0)], knowledge_ts),
+            prices=prices_table([("AAPL", ts(2026, 1, 5), 100.0)], None),
+            actions=actions_table([("AAPL", ts(2026, 1, 5), "split", 4.0)], None),
             failed={"BADTICKER": "no rows returned"},
         )
 
@@ -122,27 +120,32 @@ def test_failed_tickers_are_reported_and_left_out_of_the_universe(
         tickers=["AAPL", "BADTICKER"],
         start=ts(2026, 1, 1, hour=0),
         end=ts(2026, 1, 31),
-        knowledge_ts=BATCH_1,
+        ingested_at=BATCH_1,
     )
 
     assert "BADTICKER" in summary.failed
-    assert read(store, UNIVERSE)["ticker"].to_list() == ["AAPL"]
+    assert read_table(store, UNIVERSE)["ticker"].to_list() == ["AAPL"]
 
 
 @pytest.mark.usefixtures("fake_vendor")
-def test_knowledge_ts_comes_from_the_caller_not_the_clock(store: DatasetRef) -> None:
+def test_ingested_at_comes_from_the_caller_not_the_clock(store: DatasetRef) -> None:
     """Injected rather than read from wall time, so the job is deterministic
-    and a backfill can be stamped with the time it represents."""
-    ingest(
+    under test and a backfill can be stamped with the time it represents.
+
+    It names the batch on disk; it does not stamp first observations, which
+    carry their own publication time.
+    """
+    summary = ingest(
         ref=store,
         tickers=["AAPL"],
         start=ts(2026, 1, 1, hour=0),
         end=ts(2026, 1, 31),
-        knowledge_ts=BATCH_1,
+        ingested_at=BATCH_1,
     )
 
-    assert read(store, PRICES)["knowledge_ts"].unique().to_list() == [BATCH_1]
-    assert latest_knowledge_ts(store) == BATCH_1
+    assert summary.ingested_at == BATCH_1
+    assert read_table(store, PRICES)["knowledge_ts"].to_list() == [ts(2026, 1, 5)]
+    assert latest_knowledge_ts(store) == ts(2026, 1, 5)
 
 
 def test_latest_knowledge_ts_on_an_empty_store_says_so(store: DatasetRef) -> None:
