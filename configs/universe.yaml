@@ -1,0 +1,39 @@
+# Thirty liquid US large caps, spread across sectors.
+#
+# This list is fixed for the whole backtest and was chosen because these names
+# are liquid and well known *today* — which is information that did not exist
+# at the start of the window. Results are therefore survivorship biased and
+# optimistic. See docs/ASSUMPTIONS.md.
+
+name: us-liquid-30
+tickers:
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMZN
+  - GOOGL
+  - META
+  - TSLA
+  - JPM
+  - V
+  - MA
+  - UNH
+  - JNJ
+  - ABBV
+  - MRK
+  - PFE
+  - XOM
+  - CVX
+  - WMT
+  - COST
+  - HD
+  - MCD
+  - KO
+  - PEP
+  - PG
+  - AVGO
+  - ADBE
+  - CSCO
+  - CRM
+  - ACN
+  - NFLX

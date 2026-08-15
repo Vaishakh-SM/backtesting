@@ -1,0 +1,17 @@
+# 60-day momentum, rebalanced monthly.
+# Flip direction to -1 for short-term reversal — same strategy, opposite sign.
+
+strategy:
+  name: trailing_return
+  params:
+    lookback_days: 60
+    direction: 1
+
+universe: us-liquid-30
+
+start: 2020-01-01
+end: 2025-01-01
+
+rebalance_frequency: M
+execution_lag_days: 1
+point_in_time: true
