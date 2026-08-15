@@ -161,7 +161,25 @@ It gets a sortable column and its own tinting. Add its key to `headline` in
 
 ## Deployment
 
-A batch job, not a service. Build an image, run it, collect an artifact.
+Two jobs, neither a service, with the store between them. That gap is why a
+backtest runs offline and never depends on vendor uptime.
+
+**Ingestion** touches the network and writes to the store. It produces no
+artifact; the store *is* the output.
+
+```bash
+backtester ingest                                     # run it whenever you want data
+```
+
+Run it on demand. In production it would sit on a schedule, but nothing here
+configures one, because a job that runs by hand runs under cron unchanged:
+
+```cron
+0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
+```
+
+**Backtests** read the store and write an artifact. They coordinate with
+nothing, so run as many in parallel as you like.
 
 ```bash
 docker build -t backtester .
@@ -170,21 +188,13 @@ docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
   run configs/momentum.yaml --root /data/us-equities --out /out
 ```
 
-Ingestion is periodic. Nothing here configures a scheduler, because a job that
-runs by hand runs under cron:
-
-```cron
-0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
-```
-
 Object storage changes one thing:
 
 ```bash
 backtester run configs/momentum.yaml --root s3://research/us-equities --region us-east-1
 ```
 
-`docker compose up` runs that shape against MinIO with no AWS account. Workers
-only read, so they need no coordination.
+`docker compose up` runs that shape against MinIO with no AWS account.
 
 Logs go to stderr, not files: cron mails them, Docker captures them, a
 scheduler collects them. No secrets, since the data source is public.
