@@ -12,8 +12,8 @@ from datetime import datetime
 
 import polars as pl
 
-from qrt.data.dataset import DatasetRef, MissingData
-from qrt.data.schema import PARTITION_COL, PRICES
+from backtester.data.dataset import DatasetRef, MissingData
+from backtester.data.schema import PARTITION_COL, PRICES
 
 
 def read_window(

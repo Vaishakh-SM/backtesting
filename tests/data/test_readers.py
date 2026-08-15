@@ -15,11 +15,11 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from qrt.data.dataset import DatasetRef
-from qrt.data.duckdb_reader import read_window as duckdb_read
-from qrt.data.polars_reader import read_window as polars_read
-from qrt.data.schema import PRICES, PRICES_KEY
-from qrt.data.writer import append
+from backtester.data.dataset import DatasetRef
+from backtester.data.duckdb_reader import read_window as duckdb_read
+from backtester.data.polars_reader import read_window as polars_read
+from backtester.data.schema import PRICES, PRICES_KEY
+from backtester.data.writer import append
 from tests.conftest import READERS, Reader, prices_table, ts
 
 BATCH_1 = ts(2026, 1, 10, hour=6)
@@ -160,5 +160,5 @@ def test_empty_window_is_not_an_error(read: Reader, store: DatasetRef) -> None:
 
 @READERS
 def test_missing_table_says_what_to_do(read: Reader, store: DatasetRef) -> None:
-    with pytest.raises(ValueError, match="qrt ingest"):
+    with pytest.raises(ValueError, match="backtester ingest"):
         window(read, store)

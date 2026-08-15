@@ -14,13 +14,13 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from qrt.backtest.calendar import trading_days
-from qrt.backtest.engine import run_backtest
-from qrt.backtest.spec import BacktestSpec
-from qrt.data.dataset import DatasetRef
-from qrt.data.schema import ACTIONS, PRICES
-from qrt.data.writer import append
-from qrt.strategy.trailing_return import TrailingReturn
+from backtester.data.dataset import DatasetRef
+from backtester.data.schema import ACTIONS, PRICES
+from backtester.data.writer import append
+from backtester.engine.calendar import trading_days
+from backtester.engine.runner import run_backtest
+from backtester.engine.spec import BacktestSpec
+from backtester.strategy.trailing_return import TrailingReturn
 from tests.conftest import actions_table, prices_table, ts
 
 UNIVERSE = ("AAPL", "MSFT", "NVDA", "XOM")

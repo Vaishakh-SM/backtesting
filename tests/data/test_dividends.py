@@ -10,8 +10,8 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from qrt.conventions import TZ
-from qrt.data.dividends import dividend_adjusted
+from backtester.conventions import TZ
+from backtester.data.dividends import dividend_adjusted
 from tests.conftest import ts
 
 

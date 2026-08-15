@@ -10,11 +10,11 @@ from collections.abc import Mapping
 
 import polars as pl
 
-from qrt.data.dividends import dividend_adjusted
-from qrt.data.schema import ACTIONS, PRICES
-from qrt.data.view import MarketView
-from qrt.strategy.base import Strategy
-from qrt.strategy.portfolio import Allocation, rank_weights
+from backtester.data.dividends import dividend_adjusted
+from backtester.data.schema import ACTIONS, PRICES
+from backtester.data.view import MarketView
+from backtester.strategy.base import Strategy
+from backtester.strategy.portfolio import Allocation, rank_weights
 
 
 class TrailingReturn(Strategy):

@@ -17,8 +17,8 @@ import pyarrow as pa
 import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 
-from qrt.data.dataset import DatasetRef
-from qrt.data.schema import PARTITION_COL
+from backtester.data.dataset import DatasetRef
+from backtester.data.schema import PARTITION_COL
 
 
 def batch_id(knowledge_ts: datetime) -> str:

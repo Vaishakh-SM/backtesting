@@ -16,9 +16,9 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from qrt.data.dataset import DatasetRef
-from qrt.data.schema import PRICES, PRICES_KEY
-from qrt.data.writer import append
+from backtester.data.dataset import DatasetRef
+from backtester.data.schema import PRICES, PRICES_KEY
+from backtester.data.writer import append
 from tests.conftest import READERS, Reader, prices_table, ts
 
 # Ingested the evening after the last bar, which is what a nightly job does.

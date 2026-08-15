@@ -14,15 +14,15 @@ from pathlib import Path
 
 import pytest
 
-from qrt.report.html import CAVEATS, MAX_SERIES, render
-from qrt.report.metrics import METRICS
+from backtester.report.html import CAVEATS, MAX_SERIES, render
+from backtester.report.metrics import METRICS
 from tests.report.test_metrics import result_with
 
 
 def report(tmp_path: Path, runs: int = 1, **kwargs: object) -> str:
     from dataclasses import replace
 
-    from qrt.strategy.base import StrategyRef
+    from backtester.strategy.base import StrategyRef
 
     results = []
     for i in range(runs):

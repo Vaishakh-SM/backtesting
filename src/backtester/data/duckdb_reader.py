@@ -12,9 +12,9 @@ from datetime import datetime
 import duckdb
 import polars as pl
 
-from qrt.conventions import TZ
-from qrt.data.dataset import DatasetRef, MissingData
-from qrt.data.schema import PARTITION_COL
+from backtester.conventions import TZ
+from backtester.data.dataset import DatasetRef, MissingData
+from backtester.data.schema import PARTITION_COL
 
 # QUALIFY filters after the window function, so the restatement collapse and
 # the time bounds stay in one statement.

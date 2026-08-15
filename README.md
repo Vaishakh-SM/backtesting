@@ -1,4 +1,4 @@
-# qrt
+# backtester
 
 A small platform for taking a cross-sectional long/short equity strategy from
 an idea to a backtest and a report.
@@ -12,7 +12,7 @@ the engine.
 make install                  # uv sync
 make ingest                   # fetch market data — the only step that needs network
 make backtest                 # run over what was ingested
-qrt report out/* --out out/report.html
+backtester report out/* --out out/report.html
 ```
 
 Ingesting thirty names over ten years takes about 17 seconds and lands ~4 MB.
@@ -31,10 +31,10 @@ every other test missed.
 
 | Package | Job |
 |---|---|
-| `qrt.data` | fetching, storing, and reading back point-in-time |
-| `qrt.strategy` | the extension point — where new signals go |
-| `qrt.backtest` | running a strategy over history as a unit of work |
-| `qrt.report` | metrics and the html output |
+| `backtester.data` | fetching, storing, and reading back point-in-time |
+| `backtester.strategy` | the extension point — where new signals go |
+| `backtester.engine` | running a strategy over history as a unit of work |
+| `backtester.report` | metrics and the html output |
 
 ## Two ideas worth knowing before reading the code
 
@@ -59,12 +59,12 @@ future — the window it is handed is already bounded.
 Write one file:
 
 ```python
-# src/qrt/strategy/vol_adjusted.py
+# src/backtester/strategy/vol_adjusted.py
 import polars as pl
 
-from qrt.data.schema import PRICES
-from qrt.data.view import MarketView
-from qrt.strategy import Allocation, Strategy, rank_weights
+from backtester.data.schema import PRICES
+from backtester.data.view import MarketView
+from backtester.strategy import Allocation, Strategy, rank_weights
 
 
 class VolAdjustedMomentum(Strategy):
@@ -98,7 +98,7 @@ class VolAdjustedMomentum(Strategy):
 Then add one line so a config file or a queue message can name it:
 
 ```python
-# src/qrt/strategy/__init__.py
+# src/backtester/strategy/__init__.py
 STRATEGIES = MappingProxyType({
     "trailing_return": TrailingReturn,
     "vol_adjusted": VolAdjustedMomentum,      # <-- added
@@ -114,7 +114,7 @@ return and measures what it earned.
 
 - `lookback_sessions` counts **trading sessions**, not calendar days. Sixty
   calendar days is about forty-one sessions.
-- Prices are raw. `qrt.data.dividends.dividend_adjusted` is there if you want
+- Prices are raw. `backtester.data.dividends.dividend_adjusted` is there if you want
   total-return prices; using it is your decision, not the platform's.
 
 Working from a notebook? You need none of the registration — pass the object
@@ -151,7 +151,7 @@ point_in_time: true
 ```
 
 ```bash
-qrt backtest configs/vol_adjusted.yaml
+backtester run configs/vol_adjusted.yaml
 # out/e671fcfc7cfdc059  59 periods  final equity 1.3968
 ```
 
@@ -175,14 +175,14 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from qrt.backtest.engine import run_backtest
-from qrt.backtest.spec import BacktestSpec
-from qrt.backtest.store import save_result
-from qrt.config import load_universe
-from qrt.conventions import TZ
-from qrt.data.dataset import DatasetRef
-from qrt.data.polars_reader import latest_knowledge_ts
-from qrt.strategy import StrategyRef
+from backtester.engine.runner import run_backtest
+from backtester.engine.spec import BacktestSpec
+from backtester.engine.store import save_result
+from backtester.config import load_universe
+from backtester.conventions import TZ
+from backtester.data.dataset import DatasetRef
+from backtester.data.polars_reader import latest_knowledge_ts
+from backtester.strategy import StrategyRef
 
 NY = ZoneInfo(TZ)
 ROOT, OUT = DatasetRef("./data/us-equities"), Path("out")
@@ -238,7 +238,7 @@ each result lands.
 ## One report over many runs
 
 ```bash
-qrt report out/* --out out/report.html
+backtester report out/* --out out/report.html
 # out/report.html  6 run(s)
 ```
 
@@ -267,7 +267,7 @@ be rendered. There is no base class — nothing dispatches on a metric at
 runtime.
 
 ```python
-# src/qrt/report/metrics.py
+# src/backtester/report/metrics.py
 
 def worst_month(result: BacktestResult) -> float:
     """The single worst holding period. A PM asks this immediately after
@@ -301,7 +301,7 @@ column, is tinted good or bad by `higher_is_better`, and is available from
   metric returning `None` would render as `None` in the report rather than
   fail.
 - Put it in the headline KPI row by adding its key to the `headline` tuple in
-  `qrt/report/html.py`. Four is about the limit before a KPI row stops being a
+  `backtester/report/html.py`. Four is about the limit before a KPI row stops being a
   headline.
 
 A test asserts every metric produces a real number, so a new one that returns
@@ -331,17 +331,17 @@ This is a **batch job, not a service.** No API, no uptime SLA: build an image,
 run it, collect an artifact.
 
 ```bash
-docker build -t qrt .
+docker build -t backtester .
 
 # Ingest — the only step that touches the network. Run this on a schedule.
-docker run --rm -v "$PWD/data:/data" qrt \
+docker run --rm -v "$PWD/data:/data" backtester \
   ingest --root /data/us-equities
 
 # Backtest — offline, reads what ingestion landed.
-docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" qrt \
+docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
   backtest configs/momentum.yaml --root /data/us-equities --out /out
 
-docker run --rm -v "$PWD/out:/out" qrt report /out/<id> --out /out/report.html
+docker run --rm -v "$PWD/out:/out" backtester report /out/<id> --out /out/report.html
 ```
 
 **Scheduling.** Ingestion is a periodic job; nothing here configures a
@@ -350,13 +350,13 @@ runs under cron. What matters to the design is that ingestion is decoupled from
 and asynchronous to the backtest.
 
 ```cron
-0 6 * * 1-5  docker run --rm -v /srv/qrt/data:/data qrt ingest --root /data/us-equities
+0 6 * * 1-5  docker run --rm -v /srv/backtester/data:/data backtester ingest --root /data/us-equities
 ```
 
 **Object storage.** The only thing that changes is the dataset root:
 
 ```bash
-qrt backtest configs/momentum.yaml --root s3://research/us-equities --region us-east-1
+backtester run configs/momentum.yaml --root s3://research/us-equities --region us-east-1
 ```
 
 `docker compose up` runs the whole shape against MinIO — one writer, several

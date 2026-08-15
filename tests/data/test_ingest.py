@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from qrt.data.dataset import DatasetRef
-from qrt.data.ingest import ingest
-from qrt.data.polars_reader import latest_knowledge_ts
-from qrt.data.schema import PRICES, UNIVERSE
-from qrt.data.writer import append
-from qrt.data.yahoo import Fetched
+from backtester.data.dataset import DatasetRef
+from backtester.data.ingest import ingest
+from backtester.data.polars_reader import latest_knowledge_ts
+from backtester.data.schema import PRICES, UNIVERSE
+from backtester.data.writer import append
+from backtester.data.yahoo import Fetched
 from tests.conftest import actions_table, prices_table, read_table, ts
 
 BATCH_1 = ts(2026, 1, 10, hour=6)
@@ -75,7 +75,7 @@ def test_batches_are_traceable_on_disk(store: DatasetRef) -> None:
 
 
 def test_empty_fetch_writes_nothing(store: DatasetRef) -> None:
-    from qrt.data.schema import PRICES_SCHEMA
+    from backtester.data.schema import PRICES_SCHEMA
 
     assert append(store, PRICES, PRICES_SCHEMA.empty_table(), BATCH_1) == 0
     assert not Path(store.table(PRICES)).exists()
@@ -95,7 +95,7 @@ def test_rows_land_in_partitions_by_event_year(store: DatasetRef) -> None:
 @pytest.fixture
 def fake_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for yfinance. Everything downstream of it stays real."""
-    from qrt.data import ingest as ingest_module
+    from backtester.data import ingest as ingest_module
 
     def fetch(tickers, start, end):  # type: ignore[no-untyped-def]
         # knowledge_ts=None stamps each row at its own close, which is what a
@@ -149,5 +149,5 @@ def test_ingested_at_comes_from_the_caller_not_the_clock(store: DatasetRef) -> N
 
 
 def test_latest_knowledge_ts_on_an_empty_store_says_so(store: DatasetRef) -> None:
-    with pytest.raises(Exception, match="qrt ingest"):
+    with pytest.raises(Exception, match="backtester ingest"):
         latest_knowledge_ts(store)

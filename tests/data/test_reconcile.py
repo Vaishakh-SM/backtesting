@@ -17,12 +17,12 @@ from collections.abc import Sequence
 
 import pytest
 
-from qrt.data import ingest as ingest_module
-from qrt.data.dataset import DatasetRef
-from qrt.data.ingest import ingest
-from qrt.data.polars_reader import read_latest
-from qrt.data.schema import ACTIONS, ACTIONS_KEY, PRICES, PRICES_KEY
-from qrt.data.yahoo import Fetched
+from backtester.data import ingest as ingest_module
+from backtester.data.dataset import DatasetRef
+from backtester.data.ingest import ingest
+from backtester.data.polars_reader import read_latest
+from backtester.data.schema import ACTIONS, ACTIONS_KEY, PRICES, PRICES_KEY
+from backtester.data.yahoo import Fetched
 from tests.conftest import actions_table, prices_table, read_table, ts
 
 BAR_1 = ts(2026, 1, 5)
@@ -115,7 +115,7 @@ def test_a_correction_arriving_the_next_day(
     vendor_returns(monkeypatch, [("AAPL", BAR_1, 100.5)])
     run(store, next_day)
 
-    from qrt.data.polars_reader import read_window
+    from backtester.data.polars_reader import read_window
 
     def seen_at(cutoff):  # type: ignore[no-untyped-def]
         rows = read_window(
@@ -176,7 +176,7 @@ def test_a_restatement_is_invisible_before_it_happened(
     vendor_returns(monkeypatch, [("AAPL", BAR_1, 25.0)])
     run(store, RUN_2)
 
-    from qrt.data.polars_reader import read_window
+    from backtester.data.polars_reader import read_window
 
     as_known_in_march = read_window(
         store, PRICES, PRICES_KEY, ["AAPL"], ts(2026, 1, 1, hour=0), ts(2026, 1, 31), ts(2026, 3, 1)

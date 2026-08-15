@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from qrt.backtest.calendar import (
+from backtester.engine.calendar import (
     next_session,
     rebalance_timestamps,
     sessions_before,

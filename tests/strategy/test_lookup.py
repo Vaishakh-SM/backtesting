@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from qrt.strategy import STRATEGIES, as_ref, available, load_strategy
-from qrt.strategy.base import StrategyRef
-from qrt.strategy.trailing_return import TrailingReturn
+from backtester.strategy import STRATEGIES, as_ref, available, load_strategy
+from backtester.strategy.base import StrategyRef
+from backtester.strategy.trailing_return import TrailingReturn
 
 
 def test_a_named_strategy_resolves_to_an_object() -> None:

@@ -21,10 +21,10 @@ import polars as pl
 import pytest
 from typer.testing import CliRunner
 
-from qrt.backtest.calendar import trading_days
-from qrt.cli import app
-from qrt.data import ingest as ingest_module
-from qrt.data.yahoo import Fetched
+from backtester.cli import app
+from backtester.data import ingest as ingest_module
+from backtester.data.yahoo import Fetched
+from backtester.engine.calendar import trading_days
 from tests.conftest import actions_table, prices_table, ts
 
 UNIVERSE = ("AAPL", "MSFT", "NVDA", "XOM", "KO", "JNJ")
@@ -81,7 +81,7 @@ def write_configs(tmp_path: Path) -> tuple[Path, Path]:
 def run(*args: str) -> str:
     result = runner.invoke(app, list(args))
     assert result.exit_code == 0, (
-        f"`qrt {' '.join(args)}` failed:\n{result.output}\n{result.exception}"
+        f"`backtester {' '.join(args)}` failed:\n{result.output}\n{result.exception}"
     )
     return result.output
 
@@ -106,7 +106,7 @@ def test_ingest_backtest_report(tmp_path: Path) -> None:
     assert (store / "actions").exists()
 
     backtest_output = run(
-        "backtest",
+        "run",
         str(config),
         "--universe",
         str(universe),
@@ -158,7 +158,7 @@ def test_the_config_reaches_the_spec_unaltered(tmp_path: Path) -> None:
     )
     directory = Path(
         run(
-            "backtest",
+            "run",
             str(config),
             "--universe",
             str(universe),
@@ -207,7 +207,7 @@ def test_positions_are_held_from_the_session_after_the_signal(tmp_path: Path) ->
     )
     directory = Path(
         run(
-            "backtest",
+            "run",
             str(config),
             "--universe",
             str(universe),
@@ -249,7 +249,7 @@ def test_a_sweep_becomes_one_report(tmp_path: Path) -> None:
         )
         directories.append(
             run(
-                "backtest",
+                "run",
                 str(variant),
                 "--universe",
                 str(universe),
@@ -287,7 +287,7 @@ def test_re_running_a_backtest_does_not_duplicate_it(tmp_path: Path) -> None:
     )
 
     first = run(
-        "backtest",
+        "run",
         str(config),
         "--universe",
         str(universe),
@@ -297,7 +297,7 @@ def test_re_running_a_backtest_does_not_duplicate_it(tmp_path: Path) -> None:
         str(out),
     ).split()[0]
     second = run(
-        "backtest",
+        "run",
         str(config),
         "--universe",
         str(universe),
@@ -353,7 +353,7 @@ def test_a_config_naming_the_wrong_universe_is_refused(tmp_path: Path) -> None:
     other.write_text("name: something-else\ntickers:\n  - AAPL\n  - MSFT\n")
 
     result = runner.invoke(
-        app, ["backtest", str(config), "--universe", str(other), "--root", str(tmp_path / "store")]
+        app, ["run", str(config), "--universe", str(other), "--root", str(tmp_path / "store")]
     )
     assert result.exit_code != 0
     assert "something-else" in result.output
@@ -365,10 +365,10 @@ def test_backtesting_an_empty_store_says_what_to_do(tmp_path: Path) -> None:
 
     result = runner.invoke(
         app,
-        ["backtest", str(config), "--universe", str(universe), "--root", str(tmp_path / "nothing")],
+        ["run", str(config), "--universe", str(universe), "--root", str(tmp_path / "nothing")],
     )
     assert result.exit_code != 0
-    assert "qrt ingest" in str(result.exception) + result.output
+    assert "backtester ingest" in str(result.exception) + result.output
 
 
 def test_the_strategies_command_lists_what_a_config_can_name() -> None:

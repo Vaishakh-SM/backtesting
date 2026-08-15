@@ -3,8 +3,8 @@
 Nothing here knows what a strategy is.
 """
 
-from qrt.conventions import TZ
-from qrt.data.dataset import DatasetRef
-from qrt.data.schema import ACTIONS, PRICES, UNIVERSE
+from backtester.conventions import TZ
+from backtester.data.dataset import DatasetRef
+from backtester.data.schema import ACTIONS, PRICES, UNIVERSE
 
 __all__ = ["ACTIONS", "PRICES", "TZ", "UNIVERSE", "DatasetRef"]

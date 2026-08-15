@@ -14,9 +14,9 @@ is whatever this file says, and reading the file tells you the whole answer.
 from types import MappingProxyType
 from typing import Any
 
-from qrt.strategy.base import Strategy, StrategyRef, StrategySpec
-from qrt.strategy.portfolio import Allocation, linear_cost, rank_weights, turnover
-from qrt.strategy.trailing_return import TrailingReturn
+from backtester.strategy.base import Strategy, StrategyRef, StrategySpec
+from backtester.strategy.portfolio import Allocation, linear_cost, rank_weights, turnover
+from backtester.strategy.trailing_return import TrailingReturn
 
 STRATEGIES: MappingProxyType[str, type[Strategy]] = MappingProxyType(
     {

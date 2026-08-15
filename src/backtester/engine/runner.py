@@ -7,12 +7,10 @@ from datetime import datetime
 
 import polars as pl
 
-from qrt.backtest.calendar import next_session, rebalance_timestamps, sessions_before
-from qrt.backtest.spec import BacktestResult, BacktestSpec
-from qrt.conventions import TZ
-from qrt.data.dataset import DatasetRef, MissingData
-from qrt.data.polars_reader import earliest_knowledge_ts, read_window
-from qrt.data.schema import (
+from backtester.conventions import TZ
+from backtester.data.dataset import DatasetRef, MissingData
+from backtester.data.polars_reader import earliest_knowledge_ts, read_window
+from backtester.data.schema import (
     ACTIONS,
     ACTIONS_KEY,
     ACTIONS_SCHEMA,
@@ -20,9 +18,11 @@ from qrt.data.schema import (
     PRICES,
     PRICES_KEY,
 )
-from qrt.data.view import Snapshot
-from qrt.strategy import Strategy, load_strategy
-from qrt.strategy.portfolio import Allocation, linear_cost, turnover
+from backtester.data.view import Snapshot
+from backtester.engine.calendar import next_session, rebalance_timestamps, sessions_before
+from backtester.engine.spec import BacktestResult, BacktestSpec
+from backtester.strategy import Strategy, load_strategy
+from backtester.strategy.portfolio import Allocation, linear_cost, turnover
 
 
 def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:

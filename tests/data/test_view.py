@@ -11,8 +11,8 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
-from qrt.data.schema import ACTIONS, PRICES
-from qrt.data.view import MarketView, Snapshot
+from backtester.data.schema import ACTIONS, PRICES
+from backtester.data.view import MarketView, Snapshot
 from tests.conftest import ts
 
 AS_OF = ts(2026, 1, 8)

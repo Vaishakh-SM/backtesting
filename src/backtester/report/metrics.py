@@ -17,7 +17,7 @@ from datetime import datetime
 
 import polars as pl
 
-from qrt.backtest.spec import BacktestResult
+from backtester.engine.spec import BacktestResult
 
 DAYS_PER_YEAR = 365.25
 

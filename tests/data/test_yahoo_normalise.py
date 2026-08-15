@@ -9,8 +9,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from qrt.conventions import TZ
-from qrt.data.yahoo import _actions, _event_ts, _prices
+from backtester.conventions import TZ
+from backtester.data.yahoo import _actions, _event_ts, _prices
 
 
 def yahoo_frame() -> pd.DataFrame:

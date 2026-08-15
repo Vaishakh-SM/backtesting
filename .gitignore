@@ -9,7 +9,7 @@ initial_design.py
 base_classes.py
 assumptions.txt
 
-# Ingested data. Anchored, so src/qrt/data/ is unaffected.
+# Ingested data. Anchored, so src/backtester/data/ is unaffected.
 /data/
 /out/
 

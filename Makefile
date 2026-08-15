@@ -17,10 +17,10 @@ check: lint types test
 
 # Touches the network. Everything else runs offline.
 ingest:
-	uv run qrt ingest --universe configs/universe.yaml
+	uv run backtester ingest --universe configs/universe.yaml
 
 backtest:
-	uv run qrt backtest configs/momentum.yaml
+	uv run backtester run configs/momentum.yaml
 
 clean:
 	rm -rf out .pytest_cache .ruff_cache .mypy_cache

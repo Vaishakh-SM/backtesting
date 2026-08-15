@@ -15,12 +15,12 @@ from datetime import datetime
 import polars as pl
 import pytest
 
-from qrt.backtest.engine import run_backtest
-from qrt.backtest.spec import BacktestSpec
-from qrt.data.dataset import DatasetRef
-from qrt.data.schema import ACTIONS, PRICES
-from qrt.data.writer import append
-from qrt.strategy.trailing_return import TrailingReturn
+from backtester.data.dataset import DatasetRef
+from backtester.data.schema import ACTIONS, PRICES
+from backtester.data.writer import append
+from backtester.engine.runner import run_backtest
+from backtester.engine.spec import BacktestSpec
+from backtester.strategy.trailing_return import TrailingReturn
 from tests.conftest import actions_table, prices_table, ts
 
 # Four names over March-May 2024. Prices are set only on the dates that matter;
@@ -57,7 +57,7 @@ def build_store(store: DatasetRef, sessions: list[datetime]) -> None:
 
 @pytest.fixture
 def seeded(store: DatasetRef) -> DatasetRef:
-    from qrt.backtest.calendar import trading_days
+    from backtester.engine.calendar import trading_days
 
     build_store(store, trading_days(ts(2024, 1, 2), ts(2024, 6, 28)))
     return store

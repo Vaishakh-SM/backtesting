@@ -28,9 +28,9 @@ from pathlib import Path
 
 import polars as pl
 
-from qrt.backtest.spec import BacktestResult, BacktestSpec
-from qrt.strategy import as_ref
-from qrt.strategy.base import Strategy, StrategyRef
+from backtester.engine.spec import BacktestResult, BacktestSpec
+from backtester.strategy import as_ref
+from backtester.strategy.base import Strategy, StrategyRef
 
 SPEC_FILE = "spec.json"
 FRAMES = ("returns", "positions", "scores")
@@ -85,7 +85,7 @@ def load_results(paths: Sequence[Path]) -> list[BacktestResult]:
     """Read several runs, for a report that compares them.
 
     Paths that are plainly not runs are skipped rather than crashing, because
-    `qrt report out/*` is the obvious thing to type and the previous report is
+    `backtester report out/*` is the obvious thing to type and the previous report is
     sitting in that directory. A directory that looks like a run but has no
     spec.json is still an error — that is a typo, not noise.
     """

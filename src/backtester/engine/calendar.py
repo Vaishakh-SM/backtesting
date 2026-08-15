@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 import pandas as pd
 
-from qrt.conventions import CLOSE_HOUR, TZ
+from backtester.conventions import CLOSE_HOUR, TZ
 
 EXCHANGE = "XNYS"
 

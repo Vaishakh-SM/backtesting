@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from qrt.data.dataset import DatasetRef
-from qrt.data.schema import PRICES
+from backtester.data.dataset import DatasetRef
+from backtester.data.schema import PRICES
 
 
 def test_local_root_needs_no_duckdb_setup() -> None:

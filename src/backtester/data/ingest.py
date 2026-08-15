@@ -30,11 +30,11 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 
-from qrt.conventions import TZ
-from qrt.data import yahoo
-from qrt.data.dataset import DatasetRef
-from qrt.data.polars_reader import read_latest
-from qrt.data.schema import (
+from backtester.conventions import TZ
+from backtester.data import yahoo
+from backtester.data.dataset import DatasetRef
+from backtester.data.polars_reader import read_latest
+from backtester.data.schema import (
     ACTIONS,
     ACTIONS_KEY,
     ACTIONS_VALUES,
@@ -46,7 +46,7 @@ from qrt.data.schema import (
     UNIVERSE_SCHEMA,
     UNIVERSE_VALUES,
 )
-from qrt.data.writer import append
+from backtester.data.writer import append
 
 
 @dataclass(frozen=True)

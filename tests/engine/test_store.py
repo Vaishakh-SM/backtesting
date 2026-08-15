@@ -16,10 +16,10 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from qrt.backtest.spec import BacktestResult, BacktestSpec
-from qrt.backtest.store import load_result, load_results, save_result
-from qrt.strategy.base import StrategyRef
-from qrt.strategy.trailing_return import TrailingReturn
+from backtester.engine.spec import BacktestResult, BacktestSpec
+from backtester.engine.store import load_result, load_results, save_result
+from backtester.strategy.base import StrategyRef
+from backtester.strategy.trailing_return import TrailingReturn
 from tests.conftest import ts
 
 

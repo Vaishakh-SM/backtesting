@@ -14,10 +14,10 @@ from zoneinfo import ZoneInfo
 
 import typer
 
-from qrt import __version__
-from qrt.config import load_backtest, load_universe
-from qrt.conventions import CLOSE_HOUR, TZ
-from qrt.data.dataset import DatasetRef
+from backtester import __version__
+from backtester.config import load_backtest, load_universe
+from backtester.conventions import CLOSE_HOUR, TZ
+from backtester.data.dataset import DatasetRef
 
 app = typer.Typer(add_completion=False, help="Backtesting platform.")
 
@@ -46,7 +46,7 @@ def ingest(
     region: Annotated[str, typer.Option(help="For s3:// roots.")] = "us-east-1",
 ) -> None:
     """Fetch and append market data. Run periodically; the only writer."""
-    from qrt.data.ingest import ingest as run_ingest
+    from backtester.data.ingest import ingest as run_ingest
 
     cfg = load_universe(universe)
     ref = DatasetRef(root, {"region": region} if "://" in root else {})
@@ -70,7 +70,7 @@ def ingest(
 
 
 @app.command()
-def backtest(
+def run(
     config: Annotated[Path, typer.Argument(help="Backtest config.")],
     universe: Annotated[Path, typer.Option(help="Universe config.")] = Path(
         "configs/universe.yaml"
@@ -84,12 +84,12 @@ def backtest(
     Writes rather than prints, so a report can be produced later — and so a
     sweep leaves one directory per parameter set to report over together.
     """
-    from qrt.backtest.engine import run_backtest
-    from qrt.backtest.spec import BacktestSpec
-    from qrt.backtest.store import save_result
-    from qrt.data.polars_reader import latest_knowledge_ts
-    from qrt.strategy import load_strategy
-    from qrt.strategy.base import StrategyRef
+    from backtester.data.polars_reader import latest_knowledge_ts
+    from backtester.engine.runner import run_backtest
+    from backtester.engine.spec import BacktestSpec
+    from backtester.engine.store import save_result
+    from backtester.strategy import load_strategy
+    from backtester.strategy.base import StrategyRef
 
     cfg = load_backtest(config)
     names = load_universe(universe)
@@ -125,16 +125,18 @@ def backtest(
 
 @app.command()
 def report(
-    runs: Annotated[list[Path], typer.Argument(help="Result directories from `qrt backtest`.")],
+    runs: Annotated[
+        list[Path], typer.Argument(help="Result directories from `backtester backtest`.")
+    ],
     out: Annotated[Path, typer.Option()] = Path("out/report.html"),
 ) -> None:
     """Render one report over one or more runs.
 
-    Reads what `qrt backtest` wrote, so a sweep of parameter sets becomes one
+    Reads what `backtester backtest` wrote, so a sweep of parameter sets becomes one
     document without re-running anything.
     """
-    from qrt.backtest.store import load_results
-    from qrt.report.html import render
+    from backtester.engine.store import load_results
+    from backtester.report.html import render
 
     results = load_results(runs)
     written = render(results, out)
@@ -144,7 +146,7 @@ def report(
 @app.command()
 def strategies() -> None:
     """List the strategies a config file can name."""
-    from qrt.strategy import STRATEGIES
+    from backtester.strategy import STRATEGIES
 
     for name, cls in sorted(STRATEGIES.items()):
         typer.echo(f"{name:20} {cls.__module__}.{cls.__qualname__}")

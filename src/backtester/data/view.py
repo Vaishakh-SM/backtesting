@@ -22,7 +22,7 @@ class MarketView(Protocol):
     A strategy reads this and returns scores. It does not fetch data, does not
     know where data is stored, and does not write time filters itself.
 
-    Prices here are raw. qrt.data.dividends.dividend_adjusted is available if a
+    Prices here are raw. backtester.data.dividends.dividend_adjusted is available if a
     strategy wants total-return prices; using it is the author's decision.
     """
 

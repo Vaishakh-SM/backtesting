@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pyarrow as pa
 
-from qrt.conventions import TZ
+from backtester.conventions import TZ
 
 _TS = pa.timestamp("us", tz=TZ)
 

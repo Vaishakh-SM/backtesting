@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from qrt.data.dataset import DatasetRef
-from qrt.strategy.base import StrategyRef, StrategySpec
+from backtester.data.dataset import DatasetRef
+from backtester.strategy.base import StrategyRef, StrategySpec
 
 
 @dataclass(frozen=True)
@@ -72,13 +72,13 @@ class BacktestSpec:
     def to_dict(self) -> dict[str, Any]:
         """The form that goes on the wire and into spec.json.
 
-        Requires the strategy as a name and parameters. qrt.backtest.store
+        Requires the strategy as a name and parameters. backtester.engine.store
         converts a live object where it can.
         """
         if not isinstance(self.strategy, StrategyRef):
             raise ValueError(
                 "this spec holds a live strategy object, which cannot be serialised. "
-                "Use qrt.strategy.as_ref to name it first."
+                "Use backtester.strategy.as_ref to name it first."
             )
         return {
             "strategy": {"name": self.strategy.name, "params": dict(self.strategy.params)},

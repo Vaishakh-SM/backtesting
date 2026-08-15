@@ -19,5 +19,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # No default command: `ingest` touches the network and writes, `backtest` does
 # neither. Which one runs is the caller's decision.
-ENTRYPOINT ["qrt"]
+ENTRYPOINT ["backtester"]
 CMD ["--help"]

@@ -15,9 +15,9 @@ from datetime import timedelta
 import polars as pl
 import pytest
 
-from qrt.backtest.spec import BacktestResult, BacktestSpec
-from qrt.report import metrics
-from qrt.strategy.base import StrategyRef
+from backtester.engine.spec import BacktestResult, BacktestSpec
+from backtester.report import metrics
+from backtester.strategy.base import StrategyRef
 from tests.conftest import ts
 
 START = ts(2022, 1, 3)

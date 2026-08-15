@@ -63,4 +63,4 @@ class MissingData(ValueError):
     suggested fix live in one place."""
 
     def __init__(self, ref: DatasetRef, table: str) -> None:
-        super().__init__(f"no {table} data at {ref.table(table)} — run `qrt ingest` first")
+        super().__init__(f"no {table} data at {ref.table(table)} — run `backtester ingest` first")

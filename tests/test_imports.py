@@ -2,9 +2,9 @@
 
 A circular import between two packages only shows up when one of them is
 imported first. Under pytest something always gets there first in an order that
-happens to work, so the whole suite can pass while `import qrt.strategy` in a
+happens to work, so the whole suite can pass while `import backtester.strategy` in a
 fresh interpreter raises — which is exactly what happened, and only surfaced
-when `qrt strategies` ran inside the container.
+when `backtester strategies` ran inside the container.
 
 Each import runs in its own subprocess, because once a module is in
 sys.modules the cycle is no longer reachable.
@@ -18,26 +18,26 @@ import sys
 import pytest
 
 MODULES = [
-    "qrt",
-    "qrt.conventions",
-    "qrt.config",
-    "qrt.cli",
-    "qrt.data",
-    "qrt.data.dataset",
-    "qrt.data.ingest",
-    "qrt.data.polars_reader",
-    "qrt.data.duckdb_reader",
-    "qrt.data.dividends",
-    "qrt.strategy",
-    "qrt.strategy.base",
-    "qrt.strategy.portfolio",
-    "qrt.strategy.trailing_return",
-    "qrt.backtest",
-    "qrt.backtest.engine",
-    "qrt.backtest.calendar",
-    "qrt.backtest.store",
-    "qrt.report.metrics",
-    "qrt.report.html",
+    "backtester",
+    "backtester.conventions",
+    "backtester.config",
+    "backtester.cli",
+    "backtester.data",
+    "backtester.data.dataset",
+    "backtester.data.ingest",
+    "backtester.data.polars_reader",
+    "backtester.data.duckdb_reader",
+    "backtester.data.dividends",
+    "backtester.strategy",
+    "backtester.strategy.base",
+    "backtester.strategy.portfolio",
+    "backtester.strategy.trailing_return",
+    "backtester.engine",
+    "backtester.engine.runner",
+    "backtester.engine.calendar",
+    "backtester.engine.store",
+    "backtester.report.metrics",
+    "backtester.report.html",
 ]
 
 
@@ -59,9 +59,9 @@ def test_the_dependency_direction_holds() -> None:
     import pathlib
 
     forbidden = {
-        "qrt/data": ("qrt.strategy", "qrt.backtest", "qrt.report"),
-        "qrt/strategy": ("qrt.backtest", "qrt.report"),
-        "qrt/backtest": ("qrt.report",),
+        "backtester/data": ("backtester.strategy", "backtester.engine", "backtester.report"),
+        "backtester/strategy": ("backtester.engine", "backtester.report"),
+        "backtester/engine": ("backtester.report",),
     }
 
     for package, banned in forbidden.items():

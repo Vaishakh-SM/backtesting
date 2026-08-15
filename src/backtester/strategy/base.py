@@ -7,8 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from qrt.data.view import MarketView
-from qrt.strategy.portfolio import Allocation
+from backtester.data.view import MarketView
+from backtester.strategy.portfolio import Allocation
 
 
 class Strategy(ABC):
@@ -54,7 +54,7 @@ class Strategy(ABC):
 @dataclass(frozen=True)
 class StrategyRef:
     """A strategy named as a string, as a config file or a queue message
-    carries it. qrt.strategy.load_strategy turns one into an object."""
+    carries it. backtester.strategy.load_strategy turns one into an object."""
 
     name: str
     params: Mapping[str, Any] = field(default_factory=dict)

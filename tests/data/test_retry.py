@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from yfinance import exceptions as yfe
 
-from qrt.data import yahoo
+from backtester.data import yahoo
 
 
 @pytest.fixture(autouse=True)

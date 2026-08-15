@@ -40,9 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - run: docker build -t qrt:ci .
+      - run: docker build -t backtester:ci .
 
       # Building is not running. This is the command that first exposed a
       # circular import the whole test suite had missed.
-      - run: docker run --rm qrt:ci strategies
-      - run: docker run --rm qrt:ci backtest --help
+      - run: docker run --rm backtester:ci strategies
+      - run: docker run --rm backtester:ci run --help

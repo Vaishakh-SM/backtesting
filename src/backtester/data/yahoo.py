@@ -36,8 +36,8 @@ import pyarrow as pa
 import yfinance as yf
 from yfinance import exceptions as yfe
 
-from qrt.conventions import CLOSE_HOUR, TZ
-from qrt.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA
+from backtester.conventions import CLOSE_HOUR, TZ
+from backtester.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA
 
 SOURCE = "yfinance"
 
