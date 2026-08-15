@@ -36,14 +36,10 @@ import pyarrow as pa
 import yfinance as yf
 from yfinance import exceptions as yfe
 
-from qrt.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA, TZ
+from qrt.conventions import CLOSE_HOUR, TZ
+from qrt.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA
 
 SOURCE = "yfinance"
-
-# Yahoo dates a daily bar at local midnight. A bar is not knowable until the
-# session ends, so we move it to the close — the instant a signal could first
-# have used it.
-_CLOSE_HOUR = 16
 
 ATTEMPTS = 3
 BACKOFF_SECONDS = 1.0
@@ -146,11 +142,12 @@ def fetch(tickers: Sequence[str], start: datetime, end: datetime) -> Fetched:
 def _event_ts(index: pd.DatetimeIndex) -> pd.Series:
     """Bar date at the exchange close, timezone-aware.
 
-    Early closes are treated as 16:00 too. For daily bars nothing compares
-    finer than a session, so this only matters if intraday data is added.
+    Yahoo dates a bar at local midnight, but a bar is not knowable until the
+    session ends. Every session is treated as full-length, early closes
+    included — the calendar makes the same assumption, so the two agree.
     """
     local = index.tz_convert(TZ) if index.tz is not None else index.tz_localize(TZ)
-    return pd.Series(local.normalize() + pd.Timedelta(hours=_CLOSE_HOUR), index=index)
+    return pd.Series(local.normalize() + pd.Timedelta(hours=CLOSE_HOUR), index=index)
 
 
 def _prices(raw: pd.DataFrame, event_ts: pd.Series, ticker: str) -> pd.DataFrame:

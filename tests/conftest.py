@@ -17,10 +17,11 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
+from qrt.conventions import TZ
 from qrt.data.dataset import DatasetRef
 from qrt.data.duckdb_reader import read_window as duckdb_read
 from qrt.data.polars_reader import read_window as polars_read
-from qrt.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA, TZ
+from qrt.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA
 
 NY = ZoneInfo(TZ)
 

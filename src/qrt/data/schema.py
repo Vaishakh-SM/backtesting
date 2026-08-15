@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import pyarrow as pa
 
-# All timestamps are timezone-aware in exchange-local time. Every instrument is
-# NYSE-listed for now, so that is New York.
-TZ = "America/New_York"
+from qrt.conventions import TZ
 
 _TS = pa.timestamp("us", tz=TZ)
 

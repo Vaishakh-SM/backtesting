@@ -15,8 +15,8 @@ from zoneinfo import ZoneInfo
 import typer
 
 from qrt.config import load_universe
+from qrt.conventions import TZ
 from qrt.data.dataset import DatasetRef
-from qrt.data.schema import TZ
 
 app = typer.Typer(add_completion=False, help="Backtesting platform.")
 

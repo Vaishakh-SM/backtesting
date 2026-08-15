@@ -190,7 +190,25 @@ weight-based positions and a turnover-proportional cost model, returns, Sharpe
 and drawdown are identical regardless of portfolio size. Notional appears only as
 a presentation parameter in the report.
 
-**Rebalancing is monthly by default**, on the last trading day of the month.
+**Rebalancing is monthly by default**, on the last trading day of the month —
+the last day the exchange was actually open, not the 31st. Sessions come from a
+maintained NYSE calendar rather than from the data, so a ticker with a gap
+cannot quietly move a rebalance, and unscheduled closures such as the two days
+Hurricane Sandy shut the exchange in 2012 are respected.
+
+**Every session is treated as a full day ending at 16:00, including early
+closes.** NYSE shuts at 13:00 on roughly four days a year. We ignore that:
+ingestion stamps every bar at 16:00 and the calendar stamps every rebalance at
+16:00, so the two always agree.
+
+The simplification is deliberate, and stating it is the point — mixing the two
+conventions would be worse than either. A rebalance stamped at a true 13:00
+close would exclude that day's own bar from its own window, since the bar is
+stamped 16:00. That is a silently short window roughly once a year, which is
+exactly the kind of error a backtest absorbs without complaining.
+
+It becomes wrong if intraday data is added, where an early close genuinely
+truncates the session.
 
 **No financing, borrow cost, or margin is modelled.** A real long/short book pays
 to borrow the short leg and earns or pays on cash balances. Ignoring this

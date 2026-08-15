@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from qrt.data.schema import TZ
+from qrt.conventions import TZ
 from qrt.data.yahoo import _actions, _event_ts, _prices
 
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
+from qrt.conventions import TZ
 from qrt.data.adjust import adjust
-from qrt.data.schema import TZ
 from tests.conftest import ts
 
 

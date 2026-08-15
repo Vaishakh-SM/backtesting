@@ -55,6 +55,11 @@ Using a date for the event axis would rule out intraday data by type.
 bars at midnight, but a bar is not knowable until the session ends, and that is
 also when a signal is computed.
 
+10b1. The close hour is one constant shared by ingestion and the calendar.
+Ingestion stamps bars with it and the calendar stamps rebalance instants with
+it. If those two ever disagreed, a rebalance would exclude its own day's bar,
+so they are not allowed to be defined separately.
+
 10c. Ingestion re-fetches full history for every ticker on every run. Yahoo's
 prices are already split-adjusted, so a new split restates a ticker's entire
 series. A batch covering only recent bars would leave the store mixing two

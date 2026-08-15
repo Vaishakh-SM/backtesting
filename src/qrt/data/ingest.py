@@ -30,6 +30,7 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 
+from qrt.conventions import TZ
 from qrt.data import yahoo
 from qrt.data.dataset import DatasetRef
 from qrt.data.polars_reader import read_latest
@@ -40,7 +41,6 @@ from qrt.data.schema import (
     PRICES,
     PRICES_KEY,
     PRICES_VALUES,
-    TZ,
     UNIVERSE,
     UNIVERSE_KEY,
     UNIVERSE_SCHEMA,
