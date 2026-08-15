@@ -1,6 +1,7 @@
 # Design decisions
 
-What was decided and why, grouped by the part of the system it concerns.
+What was decided and why, grouped by the part of the system it concerns. How to
+*use* any of it is in [USER_GUIDE.md](USER_GUIDE.md).
 
 Assumptions about the *market* — survivorship bias, costs, execution — are in
 [ASSUMPTIONS.md](ASSUMPTIONS.md). This file is about the *software*.
@@ -52,12 +53,7 @@ cheaper than a hierarchy.
 
 **Credentials come from the environment, never from a spec or a config file.**
 Those get committed, and a spec travels through a queue. Only the region and an
-optional endpoint are configuration:
-
-```bash
-export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...   # or an instance role
-backtester run configs/momentum.yaml --root s3://research/us-equities
-```
+optional endpoint are configuration.
 
 polars and pyarrow read `AWS_*` themselves, so writes and the default reader
 need nothing further. DuckDB does not, so `as_duckdb` passes them explicitly —
@@ -152,17 +148,8 @@ reader would pick one arbitrarily. The ambiguity is the bug, not the direction.
 price restated later leak into a past decision.
 
 **A strategy chooses the shape it works in**, independently of which engine
-fetched the window:
-
-```python
-def read(self, table: str, fmt: Format = "polars") -> Any:
-    if fmt == "polars": return frame
-    if fmt == "pandas": return frame.to_pandas()
-    if fmt == "arrow":  return frame.to_arrow()
-```
-
-Arrow is the common currency between engines, so all three are one call away
-whichever reader was used, and polars costs nothing.
+fetched the window. Arrow is the common currency between engines, so polars,
+pandas and arrow are each one call away whichever reader was used.
 
 ---
 
@@ -318,9 +305,9 @@ class Metric:
 METRICS = (..., Metric("hit_rate", "Periods positive", hit_rate, unit="percent"))
 ```
 
-Adding one is a function and a line. The renderer iterates `METRICS` and never
-names a metric, so a new one appears in the table with a sortable column and
-its own tinting without the report knowing it exists.
+The renderer iterates `METRICS` and never names a metric, so a new one appears
+in the table with a sortable column and its own tinting without the report
+knowing it exists.
 
 **The report is one self-contained file.** No external assets, so it opens from
 an email attachment or from object storage — which is where a report actually

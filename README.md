@@ -48,8 +48,10 @@ it, so a decision can only ever see what was already known.
 Dependencies run one way, `report → engine → strategy → data`. A test asserts
 it, because reversing it once caused a circular import every other test missed.
 
-Every decision behind this, including the ones deliberately not taken, is in
-[`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md).
+[`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) has every decision
+behind this, including the ones deliberately not taken.
+[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) has a snippet for each thing you
+might want to do — S3, dataframe formats, process pools, grids, metrics.
 
 ## Adding a strategy
 
@@ -108,7 +110,7 @@ point_in_time: true
 
 ```bash
 backtester run configs/vol_adjusted.yaml
-# out/a7ca452c5dcaadf9  59 periods  final equity 1.39
+# out/<hash of the spec>  59 periods  final equity 1.39
 ```
 
 The notebook path is for iterating; the CLI path is what a queue or a cron job
@@ -221,9 +223,11 @@ scheduler collects them. No secrets, since the data source is public.
 
 ## More
 
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — how to do things: S3, dataframe
+  formats, process pools, grids, custom strategies and metrics
+- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — why they are that way
 - [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) — every judgement call, including
   the ones that make these results optimistic
-- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — what was decided, and why
 - [`examples/`](examples/) — runnable versions of everything above
 
 ```bash
