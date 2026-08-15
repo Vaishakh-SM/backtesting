@@ -11,6 +11,7 @@ selected palettes rather than one flipped.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -141,12 +142,38 @@ def line_chart(
         )
 
     floor_y = HEIGHT - PAD_BOTTOM
+    floor_y = HEIGHT - PAD_BOTTOM
     parts.append(
         f'<line class="axis" x1="{PAD_LEFT}" y1="{floor_y}" '
         f'x2="{WIDTH - PAD_RIGHT}" y2="{floor_y}"/>'
     )
+
+    # The hover layer reads this rather than recomputing the scales in JS, so
+    # the crosshair cannot drift from the line it is tracking.
+    plotted = [
+        {
+            "label": s.label,
+            "slot": s.slot,
+            "points": [
+                [round(px(x.timestamp()), 1), round(py(y), 1), y, f"{x:%Y-%m-%d}"]
+                for x, y in zip(s.x, s.y, strict=True)
+            ],
+        }
+        for s in series
+    ]
+    parts.append(
+        f'<rect class="hover-target" x="{PAD_LEFT}" y="{PAD_TOP}" '
+        f'width="{WIDTH - PAD_LEFT - PAD_RIGHT}" height="{HEIGHT - PAD_TOP - PAD_BOTTOM}"/>'
+    )
+    parts.append(f'<line class="crosshair" y1="{PAD_TOP}" y2="{floor_y}"/>')
     parts.append("</svg>")
-    return "".join(parts)
+
+    data = json.dumps({"format": y_format, "series": plotted}, separators=(",", ":"))
+    return (
+        f"<figure class=\"plot\" data-chart='{data}'>"
+        + "".join(parts)
+        + '<div class="tooltip" hidden></div></figure>'
+    )
 
 
 def _clip(label: str) -> str:
@@ -165,10 +192,17 @@ def _date_ticks(dates: Sequence[datetime], count: int = 6) -> list[datetime]:
 
 def legend(series: Sequence[Series]) -> str:
     """Always present for two or more series, so identity never rests on colour
-    alone. A single series is named by the heading instead."""
+    alone. A single series is named by the heading instead.
+
+    Each entry is a button that hides its series, which is the only practical
+    way to read six overlapping lines. Hiding is presentational — the table
+    still carries every value.
+    """
     if len(series) < 2:
         return ""
     items = "".join(
-        f'<li><span class="swatch s{s.slot}"></span>{_escape(s.label)}</li>' for s in series
+        f'<li><button type="button" class="toggle" data-slot="{s.slot}" aria-pressed="true">'
+        f'<span class="swatch s{s.slot}"></span>{_escape(s.label)}</button></li>'
+        for s in series
     )
     return f'<ul class="legend">{items}</ul>'

@@ -123,10 +123,170 @@ dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; 
 .caveats { padding-left: 20px; margin: 0; }
 .empty { color: var(--muted); font-style: italic; }
 footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 32px; }
+footer code { font-size: 11.5px; }
+
+/* Theme control. The page follows the system by default; this overrides it. */
+.theme { display: flex; gap: 2px; padding: 2px; border-radius: 8px;
+         background: var(--hairline); }
+.theme button { border: 0; background: transparent; color: var(--muted);
+                font: inherit; font-size: 12px; padding: 5px 11px;
+                border-radius: 6px; cursor: pointer; }
+.theme button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 16px; }
+
+/* Sortable table */
+table.sortable th[data-sort] { cursor: pointer; user-select: none; }
+table.sortable th[data-sort]:hover { color: var(--ink); }
+table.sortable th[aria-sort]::after { content: " \2191"; }
+table.sortable th[aria-sort="descending"]::after { content: " \2193"; }
+tbody tr:hover td { background: var(--hairline); }
+
+/* Hover layer */
+.plot { position: relative; margin: 0; }
+.hover-target { fill: transparent; }
+.crosshair { stroke: var(--axis); stroke-width: 1; visibility: hidden; }
+.tooltip { position: absolute; pointer-events: none; z-index: 2;
+           background: var(--surface); border: 1px solid var(--hairline);
+           border-radius: 7px; padding: 8px 10px; font-size: 12px;
+           box-shadow: 0 2px 10px rgba(0,0,0,0.10); min-width: 132px; }
+.tooltip .when { color: var(--muted); margin-bottom: 5px; }
+.tooltip .row { display: flex; align-items: center; gap: 7px;
+                justify-content: space-between; }
+.tooltip .row span:last-child { font-variant-numeric: tabular-nums; color: var(--ink); }
+.tooltip .name { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+
+.legend .toggle { border: 0; background: transparent; font: inherit;
+                  color: var(--ink-2); cursor: pointer; padding: 2px 0;
+                  display: flex; align-items: center; gap: 7px; }
+.legend .toggle[aria-pressed="false"] { opacity: 0.4; text-decoration: line-through; }
+.hidden-series { display: none; }
 """
 
-# Stated in the report itself rather than only in the repository, because the
-# person reading a Sharpe is the person who needs to know what it excludes.
+# Inline, because the report has to work from an attachment with no network.
+# Everything here is presentational: hiding a series or sorting a column
+# changes what is easy to read, never what the numbers are.
+_SCRIPT = """
+(function () {
+  const root = document.documentElement;
+  const KEY = "qrt-theme";
+
+  function applyTheme(choice) {
+    if (choice === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", choice);
+    document.querySelectorAll(".theme button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.theme === choice));
+    });
+    try { localStorage.setItem(KEY, choice); } catch (e) { /* private mode */ }
+  }
+
+  let saved = "system";
+  try { saved = localStorage.getItem(KEY) || "system"; } catch (e) { /* ignore */ }
+  applyTheme(saved);
+  document.querySelectorAll(".theme button").forEach(function (b) {
+    b.addEventListener("click", function () { applyTheme(b.dataset.theme); });
+  });
+
+  // --- sortable table ------------------------------------------------------
+  document.querySelectorAll("table.sortable").forEach(function (table) {
+    const body = table.tBodies[0];
+    table.querySelectorAll("th[data-sort]").forEach(function (th) {
+      th.addEventListener("click", function () {
+        const column = Number(th.dataset.sort);
+        const descending = th.getAttribute("aria-sort") !== "descending";
+        const rows = Array.from(body.rows);
+
+        rows.sort(function (a, b) {
+          const x = a.cells[column].dataset.value;
+          const y = b.cells[column].dataset.value;
+          const nx = parseFloat(x), ny = parseFloat(y);
+          const cmp = (isNaN(nx) || isNaN(ny)) ? String(x).localeCompare(String(y)) : nx - ny;
+          return descending ? -cmp : cmp;
+        });
+
+        rows.forEach(function (r) { body.appendChild(r); });
+        table.querySelectorAll("th").forEach(function (o) { o.removeAttribute("aria-sort"); });
+        th.setAttribute("aria-sort", descending ? "descending" : "ascending");
+      });
+    });
+  });
+
+  // --- chart hover ---------------------------------------------------------
+  document.querySelectorAll(".plot[data-chart]").forEach(function (figure) {
+    const chart = JSON.parse(figure.dataset.chart);
+    const svg = figure.querySelector("svg");
+    const crosshair = figure.querySelector(".crosshair");
+    const tip = figure.querySelector(".tooltip");
+    const percent = chart.format.indexOf("%") !== -1;
+
+    function visible(slot) {
+      return !svg.querySelector('.line.s' + slot + '.hidden-series');
+    }
+
+    function show(event) {
+      const box = svg.getBoundingClientRect();
+      const scale = svg.viewBox.baseVal.width / box.width;
+      const x = (event.clientX - box.left) * scale;
+
+      const shown = chart.series.filter(function (s) { return visible(s.slot); });
+      if (!shown.length) return;
+
+      let nearest = null;
+      shown[0].points.forEach(function (p) {
+        if (!nearest || Math.abs(p[0] - x) < Math.abs(nearest[0] - x)) nearest = p;
+      });
+
+      crosshair.setAttribute("x1", nearest[0]);
+      crosshair.setAttribute("x2", nearest[0]);
+      crosshair.style.visibility = "visible";
+
+      let html = '<div class="when">' + nearest[3] + "</div>";
+      shown.forEach(function (s) {
+        let point = null;
+        s.points.forEach(function (p) {
+          if (!point || Math.abs(p[0] - nearest[0]) < Math.abs(point[0] - nearest[0])) point = p;
+        });
+        if (!point) return;
+        const value = percent ? (point[2] * 100).toFixed(1) + "%" : point[2].toFixed(3);
+        html += '<div class="row"><span class="name">'
+              + '<span class="swatch s' + s.slot + '"></span>' + s.label
+              + "</span><span>" + value + "</span></div>";
+      });
+      tip.innerHTML = html;
+      tip.hidden = false;
+
+      const left = (nearest[0] / scale) + 14;
+      const flip = left + tip.offsetWidth > box.width;
+      tip.style.left = (flip ? left - tip.offsetWidth - 28 : left) + "px";
+      tip.style.top = "12px";
+    }
+
+    function hide() {
+      crosshair.style.visibility = "hidden";
+      tip.hidden = true;
+    }
+
+    svg.addEventListener("mousemove", show);
+    svg.addEventListener("mouseleave", hide);
+  });
+
+  // --- legend toggles ------------------------------------------------------
+  document.querySelectorAll(".legend .toggle").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const on = button.getAttribute("aria-pressed") !== "true";
+      button.setAttribute("aria-pressed", String(on));
+      const card = button.closest("section");
+      card.querySelectorAll(".s" + button.dataset.slot).forEach(function (mark) {
+        if (mark.closest(".legend")) return;
+        mark.classList.toggle("hidden-series", !on);
+      });
+    });
+  });
+})();
+"""
+
+# One line in the footer rather than a section. The full write-up lives in
+# docs/ASSUMPTIONS.md; what a reader needs here is to know it exists.
 CAVEATS = [
     "The universe is a fixed list of names chosen for being liquid <em>today</em>, "
     "which was not knowable at the start of the window. Anything that delisted or "
@@ -173,16 +333,16 @@ def render(
         _drawdown(measured),
         _table(measured, dropped),
         _spec_details([result for result, _ in shown], display_notional),
-        _caveats(),
-        "<footer>Generated by qrt. Every number here is reproducible from the "
-        "spec recorded above.</footer>",
+        "<footer>Generated by qrt. Every number is reproducible from the spec "
+        "above. Known biases and what these results exclude: "
+        "<code>docs/ASSUMPTIONS.md</code>.</footer>",
     ]
 
     html = (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>Backtest report</title><style>{_STYLE}</style></head>"
-        f"<body><main>{''.join(body)}</main></body></html>"
+        f"<body><main>{''.join(body)}</main><script>{_SCRIPT}</script></body></html>"
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,10 +385,17 @@ def _header(results: Sequence[BacktestResult]) -> str:
     spec = results[0].spec
     runs = f"{len(results)} runs" if len(results) > 1 else "1 run"
     return (
+        "<div class='topbar'><div>"
         "<h1>Backtest report</h1>"
         f"<p class='sub'>{runs} &middot; {len(spec.universe)} names &middot; "
         f"{spec.start:%b %Y} to {spec.end:%b %Y} &middot; "
         f"data as known at {results[0].knowledge_ts:%Y-%m-%d}</p>"
+        "</div>"
+        "<div class='theme' role='group' aria-label='Colour theme'>"
+        "<button type='button' data-theme='system' aria-pressed='true'>Auto</button>"
+        "<button type='button' data-theme='light' aria-pressed='false'>Day</button>"
+        "<button type='button' data-theme='dark' aria-pressed='false'>Night</button>"
+        "</div></div>"
     )
 
 
@@ -290,22 +457,28 @@ def _drawdown(measured: Measured) -> str:
 
 
 def _table(measured: Measured, dropped: int) -> str:
-    """Every metric for every run.
+    """Every metric for every run, one row per run.
+
+    Runs as rows rather than columns because the question is "which of these is
+    better", and that is a sort. Click a header to order by it.
 
     The table view is not optional. Three of the light-mode series colours sit
     below 3:1 against the surface, and the rule for that is relief — every
     value reachable without relying on colour.
     """
-    heads = "".join(f"<th>{label}</th>" for _, label, _ in measured)
+    heads = "".join(
+        f'<th data-sort="{i + 1}" title="{metric.note or metric.label}">{metric.label}</th>'
+        for i, metric in enumerate(METRICS)
+    )
     rows = []
-    for metric in METRICS:
+    for _, label, values in measured:
         cells = "".join(
-            f"<td class='{_tone(metric.higher_is_better, values[metric.key])}'>"
+            f'<td data-value="{values[metric.key]}" '
+            f"class='{_tone(metric.higher_is_better, values[metric.key])}'>"
             f"{_format(values[metric.key], metric.unit)}</td>"
-            for _, _, values in measured
+            for metric in METRICS
         )
-        note = f"<span class='note'>{metric.note}</span>" if metric.note else ""
-        rows.append(f"<tr><td>{metric.label}{note}</td>{cells}</tr>")
+        rows.append(f'<tr><td data-value="{label}">{label}</td>{cells}</tr>')
 
     omitted = (
         f"<p>{dropped} further run(s) omitted: past eight series the colours stop "
@@ -315,7 +488,9 @@ def _table(measured: Measured, dropped: int) -> str:
     )
     return (
         "<section class='card'><h2>All metrics</h2>"
-        f"<div class='scroll'><table><thead><tr><th>Metric</th>{heads}</tr></thead>"
+        "<p>Click a column to sort. Every value in the charts is here too.</p>"
+        f"<div class='scroll'><table class='sortable'><thead><tr>"
+        f'<th data-sort="0">Run</th>{heads}</tr></thead>'
         f"<tbody>{''.join(rows)}</tbody></table></div>{omitted}</section>"
     )
 
@@ -338,16 +513,6 @@ def _spec_details(results: Sequence[BacktestResult], notional: float) -> str:
     }
     items = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows.items())
     return f"<section class='card'><h2>What was run</h2><dl>{items}</dl></section>"
-
-
-def _caveats() -> str:
-    items = "".join(f"<li>{c}</li>" for c in CAVEATS)
-    return (
-        "<section class='card'><h2>What these numbers exclude</h2>"
-        "<p>Read before drawing a conclusion. Each of these makes the results "
-        "above better than the strategy would have been.</p>"
-        f"<ul class='caveats'>{items}</ul></section>"
-    )
 
 
 # --- formatting ------------------------------------------------------------

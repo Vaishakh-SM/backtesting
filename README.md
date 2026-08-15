@@ -260,6 +260,71 @@ re-rendered with new charts.
 
 ---
 
+## Adding a metric to the report
+
+A metric is a function from a result to a number, plus enough about itself to
+be rendered. There is no base class — nothing dispatches on a metric at
+runtime.
+
+```python
+# src/qrt/report/metrics.py
+
+def worst_month(result: BacktestResult) -> float:
+    """The single worst holding period. A PM asks this immediately after
+    seeing an average."""
+    return _number(result.returns["net_return"].min())
+
+
+METRICS: tuple[Metric, ...] = (
+    ...,
+    Metric(
+        key="worst_month",              # column id and dict key
+        label="Worst period",           # what a reader sees
+        compute=worst_month,
+        unit="percent",                 # "percent" | "ratio"
+        higher_is_better=True,          # None where neither direction is better
+        note="Largest single-period loss",
+    ),
+)
+```
+
+That is the whole change. The metric now appears in the table, gets a sortable
+column, is tinted good or bad by `higher_is_better`, and is available from
+`compute(result)` — the renderer iterates `METRICS` and never names one.
+
+**Three things worth knowing:**
+
+- `higher_is_better=None` means the value is never tinted. Turnover and the
+  long/short split are neither good nor bad, and colouring them would assert
+  otherwise.
+- Use `_number(...)` around polars aggregations. They are typed loosely, and a
+  metric returning `None` would render as `None` in the report rather than
+  fail.
+- Put it in the headline KPI row by adding its key to the `headline` tuple in
+  `qrt/report/html.py`. Four is about the limit before a KPI row stops being a
+  headline.
+
+A test asserts every metric produces a real number, so a new one that returns
+a null or a NaN fails there rather than reaching the page.
+
+## What the report gives you
+
+One HTML file, no external assets, that still works when emailed:
+
+- **Headline tiles** per run — Sharpe, return, max drawdown, cost drag
+- **Equity and drawdown** with a hover crosshair reading every series at once
+- **Legend toggles** — click a run to hide it, which is the only practical way
+  to read six overlapping lines
+- **A sortable table** — runs as rows, click any metric to order by it
+- **Day / Night / Auto**, remembered between visits. Auto follows the system,
+  and the palette is two selected sets of colours rather than one flipped
+
+All of it inline. The interaction is presentational: hiding a series or sorting
+a column changes what is easy to read, never what the numbers are, and every
+value in a chart is also in the table.
+
+---
+
 ## Deployment
 
 This is a **batch job, not a service.** No API, no uptime SLA: build an image,

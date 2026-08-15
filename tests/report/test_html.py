@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from qrt.report.html import CAVEATS, MAX_SERIES, render
+from qrt.report.html import MAX_SERIES, render
 from qrt.report.metrics import METRICS
 from tests.report.test_metrics import result_with
 
@@ -53,12 +53,10 @@ def test_every_metric_reaches_the_page(tmp_path: Path) -> None:
         assert metric.label in html, metric.key
 
 
-def test_the_caveats_are_in_the_document(tmp_path: Path) -> None:
-    """A Sharpe shown without saying the universe is survivorship-biased is
-    worse than no Sharpe. These do not live only in the repository."""
-    html = report(tmp_path)
-    assert "survivorship" in html.lower() or "liquid <em>today</em>" in html
-    assert len(re.findall(r"<li>", html)) >= len(CAVEATS)
+def test_the_reader_is_pointed_at_what_the_numbers_exclude(tmp_path: Path) -> None:
+    """A Sharpe carries assumptions that change whether anyone should believe
+    it. The full write-up lives in the repository; the report has to say so."""
+    assert "ASSUMPTIONS.md" in report(tmp_path)
 
 
 def test_runs_are_labelled_by_what_differs(tmp_path: Path) -> None:
@@ -93,7 +91,7 @@ def test_several_runs_are_always_legended(tmp_path: Path) -> None:
     """Identity is never colour alone."""
     html = report(tmp_path, runs=3)
     assert html.count('<ul class="legend">') >= 1
-    assert len(re.findall(r'<li><span class="swatch', html)) >= 3
+    assert len(re.findall(r'class="toggle" data-slot="\d"', html)) >= 3
 
 
 def test_colour_slots_are_assigned_in_order_and_never_reused(tmp_path: Path) -> None:
@@ -134,3 +132,62 @@ def test_the_spec_is_recorded_so_a_reader_can_reproduce_it(tmp_path: Path) -> No
     html = report(tmp_path)
     for field in ("Universe", "Period", "Rebalance", "Costs", "Data as known at"):
         assert field in html
+
+
+# --- the interactive layer -------------------------------------------------
+
+
+def test_the_theme_can_be_chosen_not_only_inherited(tmp_path: Path) -> None:
+    """Auto follows the system, and the two explicit choices override it — a
+    report gets read on someone else's screen at someone else's settings."""
+    html = report(tmp_path)
+    for choice in ("system", "light", "dark"):
+        assert f"data-theme='{choice}'" in html
+    assert "localStorage" in html
+
+
+def test_the_table_can_be_sorted_on_any_metric(tmp_path: Path) -> None:
+    """Runs are rows because the question is which of these is better, and
+    that is a sort. Raw values ride along, since the displayed text is
+    formatted and would sort as a string."""
+    html = report(tmp_path, runs=3)
+
+    assert len(re.findall(r"th data-sort=", html)) == len(METRICS) + 1
+    assert len(re.findall(r"<tr><td data-value=", html)) == 3
+
+    values = re.findall(r'<td data-value="(-?[\d.e]+)"', html)
+    assert values, "sortable cells must carry the unformatted number"
+    for raw in values:
+        float(raw)
+
+
+def test_charts_carry_their_plotted_geometry(tmp_path: Path) -> None:
+    """The hover layer reads what was drawn rather than recomputing the scales,
+    so the crosshair cannot drift from the line it is tracking."""
+    import json
+
+    html = report(tmp_path, runs=3)
+    payloads = re.findall(r"data-chart='([^']+)'", html)
+    assert len(payloads) == 2  # equity and drawdown
+
+    chart = json.loads(payloads[0])
+    assert len(chart["series"]) == 3
+    for series in chart["series"]:
+        x, y, value, when = series["points"][0]
+        assert isinstance(value, float) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", when)
+
+
+def test_interaction_adds_no_external_dependency(tmp_path: Path) -> None:
+    """All of it inline. A report that needs a CDN is a report that stops
+    working the moment it is emailed."""
+    html = report(tmp_path, runs=3)
+    assert "<script>" in html
+    assert re.findall(r"<script[^>]+src=", html) == []
+
+
+def test_hiding_a_series_does_not_hide_its_numbers(tmp_path: Path) -> None:
+    """Legend toggles are presentational. Every value stays in the table, which
+    is also the relief for the light-mode contrast warning."""
+    html = report(tmp_path, runs=3)
+    assert 'class="toggle"' in html
+    assert html.count("<tr><td data-value=") == 3
