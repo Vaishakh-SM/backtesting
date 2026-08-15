@@ -4,6 +4,18 @@ Takes a cross-sectional long/short equity strategy from an idea to a backtest
 and a report. Built so the next strategy is one method, not a change to the
 engine.
 
+## Prerequisites
+
+[uv](https://docs.astral.sh/uv/) — that is all. It installs a suitable Python
+and every dependency itself, so a clean machine needs nothing else, not even
+Python.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh      # or: brew install uv, pipx install uv
+```
+
+Docker is needed only for the deployment section, and only if you want it.
+
 ## Running it locally
 
 ```bash
