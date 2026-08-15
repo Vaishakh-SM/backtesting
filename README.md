@@ -161,25 +161,25 @@ It gets a sortable column and its own tinting. Add its key to `headline` in
 
 ## Deployment
 
-For grid hosts, schedulers and CI. Everything above runs from a checkout; this
-is the same work on a machine with no Python and nobody watching.
+Everything above assumes you are at a terminal with the repository checked out.
+This section runs the same commands inside a container instead, for machines
+where nobody is watching: cron, CI, a grid. The container brings its own Python,
+so the host only needs Docker.
 
-Two jobs, neither a service, with the store between them. That gap is why a
-backtest runs offline and never depends on vendor uptime.
+There are two independent jobs with the data store between them. Neither is a
+server; each one starts, does its work, and exits.
 
-**Ingestion** touches the network and writes to the store. It produces no
-artifact; the store *is* the output. Periodic here, on demand locally:
+- **Ingestion** downloads prices and writes them to the store. It is the only
+  part that uses the network, and it produces no file of its own. The store is
+  its output.
+- **Backtests** read the store and write their results. They never use the
+  network, and they do not talk to each other, so you can run as many at once as
+  you have machines for.
 
-```cron
-0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
-```
-
-Nothing in the repository configures a scheduler. The command is the same one
-you run by hand, which is the point: a job that runs by hand runs under cron
-unchanged.
-
-**Backtests** read the store and write an artifact. They coordinate with
-nothing, so a grid can run as many as it has workers for.
+Splitting them is what makes a backtest repeatable. If the data provider is
+slow, down, or quietly returns a different answer today, only the ingestion job
+sees it. A backtest reads what is already stored, so it gives the same result
+next week as it did today.
 
 ```bash
 docker build -t backtester .
@@ -188,9 +188,20 @@ docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
   run configs/momentum.yaml --root /data/us-equities --out /out
 ```
 
-Object storage changes the root, on every command that touches the store.
-Credentials come from the environment like any other AWS tool, never from a
-config file:
+Ingestion is the job you would schedule, because new prices arrive daily:
+
+```cron
+0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
+```
+
+Nothing in the repository sets up a scheduler, and nothing needs to. It is the
+same command you would run by hand, so anything that can run a command can run
+this.
+
+### Using S3 instead of a local directory
+
+Change the root; nothing else. Credentials are read from the environment, the
+same way any AWS tool reads them, so they never end up in a config file:
 
 ```bash
 export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...   # or an instance role
@@ -201,13 +212,13 @@ backtester run configs/momentum.yaml --root s3://research/us-equities --region u
 backtester report out/* --out out/report.html
 ```
 
-Only the region and the optional endpoint are configuration; nothing secret is
-ever written down. Verified end to end against MinIO — ingest, backtest and
-report over `s3://`, with polars and duckdb returning identical frames.
-`docker compose up` runs that shape with no AWS account.
+The only settings written down are the region and, if you are not on AWS, the
+endpoint. This was tested end to end against MinIO, with both readers returning
+identical data. `docker compose up` starts that setup locally, so you can try it
+without an AWS account.
 
-Logs go to stderr, not files: cron mails them, Docker captures them, a
-scheduler collects them. No secrets, since the data source is public.
+Logs go to stderr rather than to a file, which is what cron, Docker and job
+schedulers already know how to collect.
 
 ## More
 
