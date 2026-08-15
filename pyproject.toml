@@ -1,0 +1,60 @@
+[project]
+name = "qrt"
+version = "0.1.0"
+description = "Cross-sectional long/short equity backtesting platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "polars>=1.0",
+    "duckdb>=1.0",
+    "pyarrow>=16.0",
+    "pandas>=2.0",
+    "yfinance>=0.2.40",
+    "exchange-calendars>=4.5",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+]
+
+[project.scripts]
+qrt = "qrt.cli:app"
+
+# New strategies are registered here. Installing a package that declares this
+# group makes its strategies resolvable by name on any worker.
+[project.entry-points."qrt.strategies"]
+trailing_return = "qrt.strategy.trailing_return:TrailingReturn"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pandas-stubs",
+    "types-PyYAML",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qrt"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+# No python_version pin: mypy targets whatever interpreter it runs under.
+# Forcing an older target makes it refuse to parse newer syntax in third-party
+# stubs, which is a tooling failure rather than a real type error.
+packages = ["qrt"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
