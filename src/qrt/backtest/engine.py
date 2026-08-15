@@ -2,19 +2,258 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
+import polars as pl
+
+from qrt.backtest.calendar import next_session, rebalance_timestamps, sessions_before
+from qrt.backtest.portfolio import TargetWeights, linear_cost, rank_weights, turnover
 from qrt.backtest.spec import BacktestResult, BacktestSpec
-from qrt.data.dataset import DatasetRef
+from qrt.data.dataset import DatasetRef, MissingData
+from qrt.data.polars_reader import earliest_knowledge_ts, read_window
+from qrt.data.schema import (
+    ACTIONS,
+    ACTIONS_KEY,
+    ACTIONS_SCHEMA,
+    PARTITION_COL,
+    PRICES,
+    PRICES_KEY,
+)
+from qrt.data.view import Snapshot
+from qrt.strategy import Strategy, load_strategy
 
 
 def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
-    """Takes a spec and a location. Knows nothing about scheduling.
+    """Run a spec against a store. Knows nothing about scheduling.
 
-    Runs one query per rebalance, each fetching the lookback window ending at
-    that rebalance, and hands the result to the strategy. The time bounds are
-    in the query, so a strategy cannot see past them however it is written.
-
-    Consecutive windows overlap, so rows are read more than once. That is
-    accepted — docs/DESIGN_DECISIONS.md 14d-14f has the cost and the point at
-    which it stops being acceptable.
+    One query per rebalance for the signal window, plus one for the holding
+    period prices. Consecutive signal windows overlap so rows are read more
+    than once — see docs/DESIGN_DECISIONS.md 14d-14f for why that is the
+    cheaper option at this size.
     """
-    raise NotImplementedError
+    strategy = (
+        spec.strategy if isinstance(spec.strategy, Strategy) else load_strategy(spec.strategy)
+    )
+
+    rebalances = rebalance_timestamps(spec.start, spec.end, spec.rebalance_frequency)
+    if not rebalances:
+        raise ValueError(f"no trading sessions between {spec.start} and {spec.end}")
+
+    _check_knowledge_covers(ref, rebalances[0], spec)
+
+    scores: list[dict[str, object]] = []
+    positions: list[dict[str, object]] = []
+    book: list[tuple[datetime, TargetWeights]] = []
+
+    for rebalance_ts in rebalances:
+        window = _signal_window(ref, spec, strategy, rebalance_ts)
+        if window is None:
+            continue  # not enough history behind this date yet
+
+        signal = strategy.generate_signal(window)
+        if not signal:
+            continue
+
+        weights = rank_weights(signal, spec.top_fraction, spec.bottom_fraction)
+
+        scores += [
+            {"rebalance_ts": rebalance_ts, "ticker": t, "score": s} for t, s in signal.items()
+        ]
+        positions += [
+            {"rebalance_ts": rebalance_ts, "ticker": t, "weight": w}
+            for t, w in weights.weights.items()
+        ]
+        book.append((rebalance_ts, weights))
+
+    if not book:
+        raise ValueError(
+            "every rebalance was skipped for want of history — check the store covers "
+            f"{strategy.lookback_sessions} sessions before {spec.start.date()}"
+        )
+
+    returns = _holding_returns(ref, spec, strategy, book)
+
+    return BacktestResult(
+        spec=spec,
+        knowledge_ts=spec.as_of_knowledge,
+        reproducible=spec.is_reproducible(),
+        scores=pl.DataFrame(scores),
+        positions=pl.DataFrame(positions),
+        returns=returns,
+    )
+
+
+def _knowledge_cutoff(spec: BacktestSpec, rebalance_ts: datetime) -> datetime:
+    """What the strategy is allowed to have known.
+
+    Point-in-time caps knowledge at the decision itself, so a correction made
+    later cannot leak backwards. Otherwise every read pins to one cutoff, which
+    is how an old run is reproduced exactly.
+    """
+    if not spec.point_in_time:
+        return spec.as_of_knowledge
+    return min(rebalance_ts, spec.as_of_knowledge)
+
+
+def _signal_window(
+    ref: DatasetRef, spec: BacktestSpec, strategy: Strategy, rebalance_ts: datetime
+) -> Snapshot | None:
+    """The bounded view for one decision, or None if history is too short.
+
+    `lookback_sessions` sessions of history plus the current one, so a
+    sixty-session strategy sees sixty-one bars and computes a sixty-session
+    return.
+    """
+    since = sessions_before(rebalance_ts, strategy.lookback_sessions + 1)
+    cutoff = _knowledge_cutoff(spec, rebalance_ts)
+
+    prices = read_window(ref, PRICES, PRICES_KEY, spec.universe, since, rebalance_ts, cutoff)
+    sessions = prices["event_ts"].n_unique() if prices.height else 0
+    if sessions <= strategy.lookback_sessions:
+        return None
+
+    return Snapshot(
+        {PRICES: prices, ACTIONS: _actions(ref, spec, since, rebalance_ts, cutoff)},
+        rebalance_ts,
+        cutoff,
+    )
+
+
+def _actions(
+    ref: DatasetRef, spec: BacktestSpec, since: datetime, until: datetime, cutoff: datetime
+) -> pl.DataFrame:
+    """Corporate actions for the window, or an empty frame if there are none.
+
+    A universe that has never paid a dividend or split is a legitimate state,
+    and ingestion writes no file when it has nothing to write. That must read
+    as "no actions" rather than as a missing store.
+    """
+    try:
+        return read_window(ref, ACTIONS, ACTIONS_KEY, spec.universe, since, until, cutoff)
+    except MissingData:
+        empty = pl.from_arrow(ACTIONS_SCHEMA.empty_table())
+        assert isinstance(empty, pl.DataFrame)
+        return empty.drop(PARTITION_COL, strict=False)
+
+
+def _check_knowledge_covers(ref: DatasetRef, first: datetime, spec: BacktestSpec) -> None:
+    """Refuse a point-in-time run the store cannot answer.
+
+    A store backfilled in one go and stamped with the wall clock knows nothing
+    about any date before the backfill ran, so every window would come back
+    empty and the run would report no positions rather than failing. Silence is
+    the worst outcome here, so this is an error.
+    """
+    if not spec.point_in_time:
+        return
+
+    oldest = earliest_knowledge_ts(ref)
+    if oldest <= first:
+        return
+
+    raise ValueError(
+        f"point-in-time run starting {first.date()}, but the store's earliest observation "
+        f"is only known as of {oldest.date()} — every window would be empty. Either set "
+        "point_in_time=False to pin every read to as_of_knowledge, or re-ingest so that "
+        "first observations carry their publication time."
+    )
+
+
+def _holding_returns(
+    ref: DatasetRef,
+    spec: BacktestSpec,
+    strategy: Strategy,
+    book: list[tuple[datetime, TargetWeights]],
+) -> pl.DataFrame:
+    """P&L of each held position, from one execution to the next.
+
+    Signals are point-in-time; P&L is not, and should not be. A decision is
+    judged on what we now believe actually happened, so these read at the run's
+    knowledge cutoff rather than at each rebalance's.
+    """
+    executions = [next_session(ts, spec.execution_lag_sessions) for ts, _ in book]
+
+    prices = read_window(
+        ref,
+        PRICES,
+        PRICES_KEY,
+        spec.universe,
+        sessions_before(executions[0], 1),
+        max(executions[-1], spec.end),
+        spec.as_of_knowledge,
+    ).pivot(on="ticker", index="event_ts", values="close")
+
+    if prices.is_empty():
+        raise ValueError(
+            f"the first position is taken on {executions[0].date()}, after the last session in "
+            "the store, so no holding period can be measured. Either extend the data or start "
+            "the backtest earlier."
+        )
+
+    # A position is marked at the last session we actually have. Without this
+    # the final rebalance's execution can land past the end of the data and a
+    # period would be scored against prices that do not exist — which showed up
+    # as a return of exactly zero rather than as an error.
+    last_available = prices["event_ts"].max()
+    assert isinstance(last_available, datetime)
+
+    rows = []
+    equity = 1.0
+    previous: TargetWeights | None = None
+
+    for i, (rebalance_ts, weights) in enumerate(book):
+        start = executions[i]
+        end = min(executions[i + 1] if i + 1 < len(book) else last_available, last_available)
+        if start >= last_available or end <= start:
+            continue  # still open at the end of the data; nothing to measure
+
+        gross = _weighted_return(prices, weights, start, end)
+        cost = linear_cost(previous, weights, spec.cost_bps)
+        net = gross - cost
+        equity *= 1.0 + net
+
+        rows.append(
+            {
+                "rebalance_ts": rebalance_ts,
+                "held_from": start,
+                "held_to": end,
+                "turnover": turnover(previous, weights),
+                "gross_return": gross,
+                "cost": cost,
+                "net_return": net,
+                "equity": equity,
+            }
+        )
+        previous = weights
+
+    return pl.DataFrame(rows)
+
+
+def _weighted_return(
+    prices: pl.DataFrame, weights: TargetWeights, start: datetime, end: datetime
+) -> float:
+    """Sum of weight times each name's return over the holding period.
+
+    Missing prices raise rather than contributing zero. A held name with no
+    price is either a data gap or a delisting, and both would otherwise show up
+    as a position that simply did not move — which reads as a real result.
+    Delistings are out of scope (docs/ASSUMPTIONS.md); this is how that shows.
+    """
+    first = prices.filter(pl.col("event_ts") == start)
+    last = prices.filter(pl.col("event_ts") == end)
+    if first.is_empty() or last.is_empty():
+        raise ValueError(f"no prices at {start} or {end} to mark the book against")
+
+    total = 0.0
+    for ticker, weight in weights.weights.items():
+        if ticker not in prices.columns or first[ticker][0] is None or last[ticker][0] is None:
+            raise ValueError(
+                f"{ticker} is held from {start.date()} to {end.date()} but has no price at "
+                "one end — a gap or a delisting, neither of which is modelled"
+            )
+        a, b = first[ticker][0], last[ticker][0]
+        total += weight * (b / a - 1.0)
+    return total
+
+
+__all__ = ["run_backtest"]

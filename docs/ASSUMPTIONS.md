@@ -231,6 +231,14 @@ exactly the kind of error a backtest absorbs without complaining.
 It becomes wrong if intraday data is added, where an early close genuinely
 truncates the session.
 
+**A position open at the end of the backtest is marked at the last available
+session, and one that opens after the data ends is not scored at all.** The
+final rebalance's execution can fall past the end of the store, and a period
+measured against prices that do not exist is not a zero return — it is an
+unanswerable question. Prices missing for a held name raise rather than
+contributing nothing, since a gap and a delisting both otherwise appear as a
+position that simply did not move.
+
 **No financing, borrow cost, or margin is modelled.** A real long/short book pays
 to borrow the short leg and earns or pays on cash balances. Ignoring this
 overstates net performance, most materially for hard-to-borrow names.
@@ -240,7 +248,17 @@ overstates net performance, most materially for hard-to-borrow names.
 ## Costs
 
 **Transaction costs are modelled as a linear function of turnover**, in basis
-points, applied at each rebalance.
+points, applied at each rebalance. Turnover is gross notional traded, so the
+first rebalance turns over 1.0 — the book has to be bought before it can be
+held.
+
+**Ties in the ranking break by ticker**, so a rerun on the same data produces
+the same book. The alternative is a portfolio that changes between runs for no
+reason a reader can see.
+
+**A universe too small to split into non-overlapping buckets is rejected**
+rather than netting a name against itself and reporting the result as market
+neutral.
 
 **This ignores market impact and is therefore optimistic for large sizes.** A
 linear cost model has no notion of capacity: it charges the same rate for $1m

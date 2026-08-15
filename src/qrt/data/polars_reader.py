@@ -70,6 +70,20 @@ def latest_knowledge_ts(ref: DatasetRef) -> datetime:
     return newest
 
 
+def earliest_knowledge_ts(ref: DatasetRef) -> datetime:
+    """Oldest observation in the store.
+
+    The engine compares this against the first rebalance. A store backfilled in
+    one go, stamped with the wall clock, knows nothing about any date before
+    the backfill ran — so a point-in-time run over it would return empty
+    windows at every rebalance and report no positions rather than failing.
+    """
+    oldest = _collect(_scan(ref, PRICES).select(pl.col("knowledge_ts").min()), ref, PRICES).item()
+    if oldest is None:
+        raise MissingData(ref, PRICES)
+    return oldest
+
+
 def _scan(ref: DatasetRef, table: str) -> pl.LazyFrame:
     return pl.scan_parquet(ref.scan(table), **ref.as_polars())
 

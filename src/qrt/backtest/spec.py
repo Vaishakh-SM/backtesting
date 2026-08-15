@@ -39,13 +39,16 @@ class BacktestSpec:
     point_in_time: bool = True
 
     rebalance_frequency: str = "M"  # "M" | "W" | "D"
-    execution_lag_days: int = 1  # decide on close of t, hold from t+1
+    execution_lag_sessions: int = 1  # decide on close of t, hold from the next session
+
+    # Sizing and costs. Flat fields rather than nested objects, so a sweep is
+    # varying numbers on a spec rather than constructing anything.
+    top_fraction: float = 0.2
+    bottom_fraction: float = 0.2
+    cost_bps: float = 10.0
 
     # Same spec, different code, different answer.
     code_version: str = ""
-
-    # Portfolio construction and costs are not modelled yet. Their parameters
-    # land here as plain fields when they are.
 
     def is_reproducible(self) -> bool:
         """A spec holding a live object cannot be rebuilt from itself."""
