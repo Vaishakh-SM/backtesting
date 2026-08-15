@@ -60,7 +60,11 @@ class DatasetRef:
         if region := self.storage_options.get("region"):
             stmts.append(f"SET s3_region='{_sql(region)}'")
 
-        if endpoint := self.storage_options.get("endpoint"):
+        # polars and pyarrow both honour AWS_ENDPOINT_URL, so duckdb does too.
+        # Otherwise pointing at MinIO or any non-AWS S3 works for two of the
+        # three libraries and fails for the third.
+        endpoint = self.storage_options.get("endpoint") or os.environ.get("AWS_ENDPOINT_URL")
+        if endpoint:
             # duckdb adds the scheme itself. Passing one produces a request to
             # http://http://host, which fails as an unresolvable hostname.
             scheme, _, host = endpoint.rpartition("//")
