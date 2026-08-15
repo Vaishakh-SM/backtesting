@@ -7,12 +7,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # pyproject claims >=3.11. Testing only one version makes that a claim
+      # rather than a fact.
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          python-version: ${{ matrix.python }}
 
       - run: uv sync --frozen
 
@@ -20,5 +28,21 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run mypy
 
-      # Runs offline. Tests use committed fixtures, never the vendor.
+      # Offline. The vendor call is substituted in tests; everything after it
+      # is real, so no network or credentials are needed.
       - run: uv run pytest
+
+  container:
+    # The README calls this deployable, which was untrue until this job
+    # existed: the image did not build, because pyproject declares a readme
+    # the Dockerfile never copied. Nothing caught it, because nothing built it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -t qrt:ci .
+
+      # Building is not running. This is the command that first exposed a
+      # circular import the whole test suite had missed.
+      - run: docker run --rm qrt:ci strategies
+      - run: docker run --rm qrt:ci backtest --help

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from qrt.backtest.portfolio import Allocation, linear_cost, rank_weights, turnover
+from qrt.strategy.portfolio import Allocation, linear_cost, rank_weights, turnover
 
 
 def test_a_neutral_unlevered_book_is_accepted() -> None:

@@ -5,8 +5,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Dependencies first, so source edits do not invalidate the layer.
-COPY pyproject.toml uv.lock ./
+# Dependencies first, so source edits do not invalidate the layer. README is
+# here because pyproject declares it as the package readme, and hatchling
+# refuses to build without it.
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 COPY src/ src/

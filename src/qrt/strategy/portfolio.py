@@ -1,5 +1,10 @@
 """What a strategy hands back, and helpers for building it.
 
+Lives with the strategy rather than the engine because it is the strategy's
+output type. Having it under qrt.backtest made the two packages import each
+other, which worked only because of the order pytest happened to import them
+in — `import qrt.strategy` on its own raised.
+
 A strategy answers "given this moment, what should the book hold". Weight is
 not a function of score once anything real is involved — volatility scaling,
 position caps, correlated names, sector neutrality and turnover all make a

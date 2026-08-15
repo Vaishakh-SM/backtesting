@@ -15,6 +15,7 @@ from types import MappingProxyType
 from typing import Any
 
 from qrt.strategy.base import Strategy, StrategyRef, StrategySpec
+from qrt.strategy.portfolio import Allocation, linear_cost, rank_weights, turnover
 from qrt.strategy.trailing_return import TrailingReturn
 
 STRATEGIES: MappingProxyType[str, type[Strategy]] = MappingProxyType(
@@ -70,11 +71,15 @@ def _parameters(strategy: Strategy) -> dict[str, Any]:
 
 __all__ = [
     "STRATEGIES",
+    "Allocation",
     "Strategy",
     "StrategyRef",
     "StrategySpec",
     "TrailingReturn",
     "as_ref",
     "available",
+    "linear_cost",
     "load_strategy",
+    "rank_weights",
+    "turnover",
 ]
