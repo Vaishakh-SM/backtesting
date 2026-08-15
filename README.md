@@ -4,14 +4,19 @@ Takes a cross-sectional long/short equity strategy from an idea to a backtest
 and a report. Built so the next strategy is one method, not a change to the
 engine.
 
+## How to run
+
 ```bash
-make install                                  # uv sync
-make ingest                                   # fetch data (the only step needing network)
-backtester run configs/momentum.yaml          # -> out/<id>/
-backtester report out/* --out out/report.html
+uv sync
+source .venv/bin/activate          # or prefix each command below with `uv run`
+
+backtester ingest                                 # fetch data; the only step needing network
+backtester run configs/momentum.yaml              # -> out/<id>/
+backtester report out/* --out out/report.html     # -> out/report.html
 ```
 
-Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest.
+Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest. Ingest
+once; the backtest and report read what it landed and need no network.
 
 ## Shape
 
@@ -98,7 +103,7 @@ point_in_time: true
 
 ```bash
 backtester run configs/vol_adjusted.yaml
-# out/e671fcfc7cfdc059  59 periods  final equity 1.3968
+# out/a7ca452c5dcaadf9  59 periods  final equity 1.39
 ```
 
 The notebook path is for iterating; the CLI path is what a queue or a cron job
@@ -180,6 +185,10 @@ configures one, because a job that runs by hand runs under cron unchanged:
 
 **Backtests** read the store and write an artifact. They coordinate with
 nothing, so run as many in parallel as you like.
+
+Everything above runs from a checkout. The image is for running it somewhere
+that is not your machine: a scheduler host, a grid worker, CI. Same commands,
+no Python on the host.
 
 ```bash
 docker build -t backtester .
