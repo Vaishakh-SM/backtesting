@@ -30,8 +30,8 @@ def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
 
     One query per rebalance for the signal window, plus one for the holding
     period prices. Consecutive signal windows overlap so rows are read more
-    than once — see docs/DESIGN_DECISIONS.md 14d-14f for why that is the
-    cheaper option at this size.
+    than once; "The engine" in docs/DESIGN_DECISIONS.md has the arithmetic and
+    the point at which the other approach wins.
     """
     strategy = (
         spec.strategy if isinstance(spec.strategy, Strategy) else load_strategy(spec.strategy)

@@ -63,6 +63,11 @@ def read_window(
             },
         ).pl()
     except duckdb.IOException as exc:
+        # Only a genuinely empty path is missing data. An unreachable endpoint
+        # or a rejected credential is also an IOException, and reporting those
+        # as "run ingest first" sends someone to fix the wrong thing.
+        if "No files found" not in str(exc):
+            raise
         raise MissingData(ref, table) from exc
     finally:
         conn.close()

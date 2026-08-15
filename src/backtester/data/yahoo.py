@@ -107,8 +107,8 @@ def fetch(tickers: Sequence[str], start: datetime, end: datetime) -> Fetched:
 
     Rows come back stamped with `knowledge_ts = event_ts`, i.e. as first
     observations published at the close. Ingestion re-stamps anything that
-    turns out to contradict what the store already holds — see
-    docs/DESIGN_DECISIONS.md 10e.
+    turns out to contradict what the store already holds — see "Time, and what
+    we knew when" in docs/DESIGN_DECISIONS.md.
 
     One request per ticker rather than a batched download, so a single bad
     symbol degrades to a recorded failure instead of taking the batch with it.

@@ -4,21 +4,39 @@ Takes a cross-sectional long/short equity strategy from an idea to a backtest
 and a report. Built so the next strategy is one method, not a change to the
 engine.
 
+## Prerequisites
+
+[uv](https://docs.astral.sh/uv/) — that is all. It installs a suitable Python
+and every dependency itself, so a clean machine needs nothing else, not even
+Python.
+
 ```bash
-make install                                  # uv sync
-make ingest                                   # fetch data (the only step needing network)
-backtester run configs/momentum.yaml          # -> out/<id>/
-backtester report out/* --out out/report.html
+curl -LsSf https://astral.sh/uv/install.sh | sh      # or: brew install uv, pipx install uv
 ```
 
-Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest.
+Docker is needed only for the deployment section, and only if you want it.
 
-## Shape
+## Running it locally
 
+```bash
+uv sync
+source .venv/bin/activate          # or prefix each command below with `uv run`
+
+backtester ingest                                 # fetch data; the only step needing network
+backtester run configs/momentum.yaml              # -> out/<id>/
+backtester report out/* --out out/report.html     # -> out/report.html
 ```
-ingest  ──►  append-only store  ──►  backtest  ──►  report
-(periodic)   (parquet, bitemporal)   (per spec)     (one html file)
-```
+
+Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest. Ingest
+once; the backtest and report read what it landed and need no network.
+
+## Design
+
+![How it fits together](docs/design.png)
+
+Five stages, each taking its parts from outside itself. Data is an append-only
+log where every row records both when something happened and when we learned
+it, so a decision can only ever see what was already known.
 
 | Package | Job |
 |---|---|
@@ -30,16 +48,10 @@ ingest  ──►  append-only store  ──►  backtest  ──►  report
 Dependencies run one way, `report → engine → strategy → data`. A test asserts
 it, because reversing it once caused a circular import every other test missed.
 
-## Two ideas behind the design
-
-**Ingestion is separate from backtesting.** A periodic job fetches and appends;
-backtests read only what has landed, so they run offline and never depend on
-vendor uptime.
-
-**Every row carries two timestamps.** `event_ts` is what it is about,
-`knowledge_ts` is when we learned it. Nothing is updated; a restatement
-appends. A decision at time `t` sees `event_ts <= t` **and**
-`knowledge_ts <= t`, so a later correction cannot leak backwards.
+[`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) has every decision
+behind this, including the ones deliberately not taken.
+[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) has a snippet for each thing you
+might want to do — S3, dataframe formats, process pools, grids, metrics.
 
 ## Adding a strategy
 
@@ -98,7 +110,7 @@ point_in_time: true
 
 ```bash
 backtester run configs/vol_adjusted.yaml
-# out/e671fcfc7cfdc059  59 periods  final equity 1.3968
+# out/<hash of the spec>  59 periods  final equity 1.39
 ```
 
 The notebook path is for iterating; the CLI path is what a queue or a cron job
@@ -161,7 +173,25 @@ It gets a sortable column and its own tinting. Add its key to `headline` in
 
 ## Deployment
 
-A batch job, not a service. Build an image, run it, collect an artifact.
+For grid hosts, schedulers and CI. Everything above runs from a checkout; this
+is the same work on a machine with no Python and nobody watching.
+
+Two jobs, neither a service, with the store between them. That gap is why a
+backtest runs offline and never depends on vendor uptime.
+
+**Ingestion** touches the network and writes to the store. It produces no
+artifact; the store *is* the output. Periodic here, on demand locally:
+
+```cron
+0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
+```
+
+Nothing in the repository configures a scheduler. The command is the same one
+you run by hand, which is the point: a job that runs by hand runs under cron
+unchanged.
+
+**Backtests** read the store and write an artifact. They coordinate with
+nothing, so a grid can run as many as it has workers for.
 
 ```bash
 docker build -t backtester .
@@ -170,30 +200,34 @@ docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
   run configs/momentum.yaml --root /data/us-equities --out /out
 ```
 
-Ingestion is periodic. Nothing here configures a scheduler, because a job that
-runs by hand runs under cron:
-
-```cron
-0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
-```
-
-Object storage changes one thing:
+Object storage changes the root, on every command that touches the store.
+Credentials come from the environment like any other AWS tool, never from a
+config file:
 
 ```bash
+export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...   # or an instance role
+export AWS_ENDPOINT_URL=http://minio:9000                 # only for non-AWS S3
+
+backtester ingest --root s3://research/us-equities
 backtester run configs/momentum.yaml --root s3://research/us-equities --region us-east-1
+backtester report out/* --out out/report.html
 ```
 
-`docker compose up` runs that shape against MinIO with no AWS account. Workers
-only read, so they need no coordination.
+Only the region and the optional endpoint are configuration; nothing secret is
+ever written down. Verified end to end against MinIO — ingest, backtest and
+report over `s3://`, with polars and duckdb returning identical frames.
+`docker compose up` runs that shape with no AWS account.
 
 Logs go to stderr, not files: cron mails them, Docker captures them, a
 scheduler collects them. No secrets, since the data source is public.
 
 ## More
 
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — how to do things: S3, dataframe
+  formats, process pools, grids, custom strategies and metrics
+- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — why they are that way
 - [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) — every judgement call, including
   the ones that make these results optimistic
-- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — what was decided, and why
 - [`examples/`](examples/) — runnable versions of everything above
 
 ```bash
