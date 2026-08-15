@@ -1,146 +1,92 @@
 # backtester
 
-A small platform for taking a cross-sectional long/short equity strategy from
-an idea to a backtest and a report.
-
-Built so that adding the next strategy means writing one method, not touching
-the engine.
-
-## Quickstart
+Takes a cross-sectional long/short equity strategy from an idea to a backtest
+and a report. Built so the next strategy is one method, not a change to the
+engine.
 
 ```bash
-make install                  # uv sync
-make ingest                   # fetch market data — the only step that needs network
-make backtest                 # run over what was ingested
+make install                                  # uv sync
+make ingest                                   # fetch data (the only step needing network)
+backtester run configs/momentum.yaml          # -> out/<id>/
 backtester report out/* --out out/report.html
 ```
 
-Ingesting thirty names over ten years takes about 17 seconds and lands ~4 MB.
-A backtest over that data takes about 2 seconds.
+Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest.
 
-## How it fits together
+## Shape
 
 ```
 ingest  ──►  append-only store  ──►  backtest  ──►  report
 (periodic)   (parquet, bitemporal)   (per spec)     (one html file)
 ```
 
-Four packages, depending one way only — `report → backtest → strategy → data`.
-A test asserts that direction, because reversing it caused a circular import
-every other test missed.
-
 | Package | Job |
 |---|---|
-| `backtester.data` | fetching, storing, and reading back point-in-time |
-| `backtester.strategy` | the extension point — where new signals go |
-| `backtester.engine` | running a strategy over history as a unit of work |
-| `backtester.report` | metrics and the html output |
+| `backtester.data` | fetch, store, read back point-in-time |
+| `backtester.strategy` | the extension point |
+| `backtester.engine` | run a strategy over history as a unit of work |
+| `backtester.report` | metrics and html |
 
-## Two ideas worth knowing before reading the code
+Dependencies run one way, `report → engine → strategy → data`. A test asserts
+it, because reversing it once caused a circular import every other test missed.
 
-**Ingestion and backtesting are separate.** Ingestion is a periodic job that
-fetches from a vendor and appends. Backtests read only what has already landed,
-so they run offline and never depend on vendor uptime.
+## Two ideas behind the design
 
-**Every row carries two timestamps.** `event_ts` is what the row is about,
-`knowledge_ts` is when we learned it. Nothing is ever updated — a restatement
-appends a new row. A strategy deciding at time `t` sees only `event_ts <= t`
-*and* `knowledge_ts <= t`, so a correction made later cannot leak backwards
-into an earlier decision.
+**Ingestion is separate from backtesting.** A periodic job fetches and appends;
+backtests read only what has landed, so they run offline and never depend on
+vendor uptime.
 
----
+**Every row carries two timestamps.** `event_ts` is what it is about,
+`knowledge_ts` is when we learned it. Nothing is updated; a restatement
+appends. A decision at time `t` sees `event_ts <= t` **and**
+`knowledge_ts <= t`, so a later correction cannot leak backwards.
 
 ## Adding a strategy
 
-A strategy answers one question: **given this moment, what should the book
-hold?** It never fetches data, never writes a date filter, and never sees the
-future — the window it is handed is already bounded.
-
-Write one file:
+One method. Given a moment, what should the book hold?
 
 ```python
-# src/backtester/strategy/vol_adjusted.py
-import polars as pl
-
-from backtester.data.schema import PRICES
-from backtester.data.view import MarketView
-from backtester.strategy import Allocation, Strategy, rank_weights
-
-
 class VolAdjustedMomentum(Strategy):
-    """Trailing return per unit of realised volatility."""
-
-    def __init__(self, lookback_sessions: int = 60, top_fraction: float = 0.2):
-        self._lookback_sessions = lookback_sessions
-        self.top_fraction = top_fraction
-
-    @property
-    def lookback_sessions(self) -> int:
-        return self._lookback_sessions          # how much history you need
+    lookback_sessions = 60            # history needed, in trading sessions
 
     def allocate(self, view: MarketView) -> Allocation:
-        prices = view.read(PRICES).sort("event_ts")
-
-        stats = (
-            prices.with_columns(pl.col("close").pct_change().over("ticker").alias("ret"))
-            .group_by("ticker")
-            .agg(
-                (pl.col("close").last() / pl.col("close").first() - 1).alias("total"),
-                pl.col("ret").std().alias("vol"),
-            )
-            .filter(pl.col("vol") > 0)
-        )
-
-        scores = {r["ticker"]: r["total"] / r["vol"] for r in stats.iter_rows(named=True)}
-        return rank_weights(scores, self.top_fraction, self.top_fraction)
+        prices = view.read(PRICES)    # already bounded: no date filters, no future
+        scores = ...                  # {ticker: score}
+        return rank_weights(scores, top_fraction=0.2, bottom_fraction=0.2)
 ```
 
-Then add one line so a config file or a queue message can name it:
+Sizing is yours. `rank_weights` does equal-weighted buckets; weight by
+conviction, cap positions, or hold everything instead if you prefer. The engine
+takes the `Allocation` and measures what it earned.
+
+Complete and runnable: [`examples/custom_strategy.py`](examples/custom_strategy.py).
+
+## Running one
+
+**From a notebook.** Pass the object, no registration:
 
 ```python
-# src/backtester/strategy/__init__.py
-STRATEGIES = MappingProxyType({
-    "trailing_return": TrailingReturn,
-    "vol_adjusted": VolAdjustedMomentum,      # <-- added
-})
+result = run_backtest(
+    BacktestSpec(
+        universe=("AAPL", "MSFT", "NVDA"),
+        start=at_close(2020, 1, 1),
+        end=at_close(2024, 12, 31),
+        strategy=VolAdjustedMomentum(60),
+        as_of_knowledge=latest_knowledge_ts(ref),
+    ),
+    ref,
+)
+compute(result)["net_sharpe"]        # 0.27
 ```
 
-That is the whole contract. Sizing is yours — `rank_weights` covers
-equal-weighted buckets, but nothing stops you weighting by conviction, capping
-positions, or holding every name. The engine takes whatever `Allocation` you
-return and measures what it earned.
-
-**Two things worth knowing:**
-
-- `lookback_sessions` counts **trading sessions**, not calendar days. Sixty
-  calendar days is about forty-one sessions.
-- Prices are raw. `backtester.data.dividends.dividend_adjusted` is there if you want
-  total-return prices; using it is your decision, not the platform's.
-
-Working from a notebook? You need none of the registration — pass the object
-directly:
-
-```python
-result = run_backtest(replace(spec, strategy=VolAdjustedMomentum(30)), ref)
-```
-
-The result still gets saved. It simply records that it cannot be rebuilt from
-its own description, because a worker elsewhere has no way to look it up.
-
----
-
-## Backtesting it
-
-Point a config at the strategy by name:
+**From the CLI.** Add a line to `STRATEGIES` in
+`backtester/strategy/__init__.py` so a config can name it:
 
 ```yaml
 # configs/vol_adjusted.yaml
 strategy:
   name: vol_adjusted
-  params:
-    lookback_sessions: 60
-    top_fraction: 0.2
-
+  params: {lookback_sessions: 60, top_fraction: 0.2}
 universe: us-liquid-30
 start: 2020-01-01
 end: 2024-12-31
@@ -155,237 +101,104 @@ backtester run configs/vol_adjusted.yaml
 # out/e671fcfc7cfdc059  59 periods  final equity 1.3968
 ```
 
-The result is written, not printed. `out/<id>/` holds `spec.json`,
-`returns.parquet`, `positions.parquet` and `scores.parquet`. The directory name
-is a hash of the spec, so **re-running the same backtest overwrites rather than
-duplicating**, and different parameters land in different directories.
+The notebook path is for iterating; the CLI path is what a queue or a cron job
+drives. A notebook-defined strategy still saves its result, but records that it
+cannot be rebuilt, since nothing elsewhere can look the class up.
 
----
+Results are written, not printed. `out/<id>/` holds `spec.json` and three
+parquet files, named by a hash of the spec, so re-running overwrites and
+different parameters land elsewhere.
 
-## Running many backtests in parallel
+## Many at once
 
-`run_backtest` is a pure function and results are content-addressed, so workers
-need no coordination — they write to distinct directories by construction.
-
-```python
-# sweep.py
-import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
-from pathlib import Path
-from zoneinfo import ZoneInfo
-
-from backtester.engine.runner import run_backtest
-from backtester.engine.spec import BacktestSpec
-from backtester.engine.store import save_result
-from backtester.config import load_universe
-from backtester.conventions import TZ
-from backtester.data.dataset import DatasetRef
-from backtester.data.polars_reader import latest_knowledge_ts
-from backtester.strategy import StrategyRef
-
-NY = ZoneInfo(TZ)
-ROOT, OUT = DatasetRef("./data/us-equities"), Path("out")
-
-
-def one(spec: BacktestSpec) -> str:
-    return str(save_result(run_backtest(spec, ROOT), OUT))
-
-
-if __name__ == "__main__":
-    universe = tuple(load_universe(Path("configs/universe.yaml")).tickers)
-    cutoff = latest_knowledge_ts(ROOT)     # resolved ONCE, shared by every worker
-
-    specs = [
-        BacktestSpec(
-            universe=universe,
-            start=datetime(2020, 1, 1, 16, tzinfo=NY),
-            end=datetime(2024, 12, 31, 16, tzinfo=NY),
-            strategy=StrategyRef("trailing_return",
-                                 {"lookback_sessions": n, "direction": d}),
-            as_of_knowledge=cutoff,
-        )
-        for n in (20, 60, 120)
-        for d in (1, -1)
-    ]
-
-    # spawn, NOT the default fork — see below.
-    with ProcessPoolExecutor(max_workers=6, mp_context=mp.get_context("spawn")) as pool:
-        for directory in pool.map(one, specs):
-            print(directory)
-```
+`run_backtest` is pure and output is content-addressed, so workers need no
+coordination.
 
 ```bash
-python sweep.py            # 6 backtests in ~5s
+python examples/parallel_sweep.py     # 6 backtests, ~5s
 ```
 
-**Use `spawn`, not the default `fork`.** Polars keeps a thread pool, and
-forking a process that has already used it deadlocks — the sweep hangs with no
-error at all. This bit us; it is not theoretical.
+Two things in [`examples/parallel_sweep.py`](examples/parallel_sweep.py) that
+are not guessable: use `spawn`, not the default `fork`, because polars keeps a
+thread pool and forking deadlocks with no error at all. And resolve
+`as_of_knowledge` once in the parent, or workers land on different cutoffs and
+stop comparing like with like.
 
-**Resolve `as_of_knowledge` once, in the parent.** If each worker called
-`latest_knowledge_ts` itself they could land on different cutoffs, and the
-sweep would stop comparing like with like.
+Same shape on a grid. A `BacktestSpec` is pure data, so it serialises to JSON
+and travels in a queue message.
 
-The same shape works on a real grid. A `BacktestSpec` is pure data — no
-connections, no live objects — so it serialises to JSON and travels in a queue
-message. Each node runs the same image, resolves the strategy by name, and
-writes its result. Nothing coordinates, because the content hash decides where
-each result lands.
-
----
-
-## One report over many runs
+## The report
 
 ```bash
 backtester report out/* --out out/report.html
-# out/report.html  6 run(s)
 ```
 
-One self-contained HTML file covering every run: headline metrics per run, all
-equity curves on one axis, drawdowns, a full metric table, what was run, and
-what the numbers exclude. No external assets — it opens from an email
-attachment or from object storage.
+One self-contained file, no external assets. Parameters and limitations up top,
+a tab per run plus a comparison, a sortable and filterable table, then equity
+and drawdown with a hover crosshair and clickable legend. Day, night or auto.
 
-Runs are labelled by whatever distinguishes them, so a sweep over two
-parameters reads `direction 1 lookback 60` rather than a dump of every setting
-they share. Columns are sorted, so the document is the same however the shell
-expanded the glob.
+Past eight runs it says how many it omitted rather than truncating silently.
 
-Past eight runs the report says how many it omitted rather than truncating
-silently — beyond that the colours stop being tellable apart.
+## Adding a metric
 
-Reporting reads files and re-runs nothing, so last month's results can be
-re-rendered with new charts.
-
----
-
-## Adding a metric to the report
-
-A metric is a function from a result to a number, plus enough about itself to
-be rendered. There is no base class — nothing dispatches on a metric at
-runtime.
+One function and one line. The renderer iterates `METRICS` and never names one.
 
 ```python
-# src/backtester/report/metrics.py
-
-def worst_month(result: BacktestResult) -> float:
-    """The single worst holding period. A PM asks this immediately after
-    seeing an average."""
+def worst_period(result: BacktestResult) -> float:
     return _number(result.returns["net_return"].min())
 
-
-METRICS: tuple[Metric, ...] = (
-    ...,
-    Metric(
-        key="worst_month",              # column id and dict key
-        label="Worst period",           # what a reader sees
-        compute=worst_month,
-        unit="percent",                 # "percent" | "ratio"
-        higher_is_better=True,          # None where neither direction is better
-        note="Largest single-period loss",
-    ),
-)
+METRICS = (..., Metric(
+    key="worst_period",
+    label="Worst period",
+    compute=worst_period,
+    unit="percent",              # "percent" | "ratio"
+    higher_is_better=True,       # None where neither direction is better
+))
 ```
 
-That is the whole change. The metric now appears in the table, gets a sortable
-column, is tinted good or bad by `higher_is_better`, and is available from
-`compute(result)` — the renderer iterates `METRICS` and never names one.
-
-**Three things worth knowing:**
-
-- `higher_is_better=None` means the value is never tinted. Turnover and the
-  long/short split are neither good nor bad, and colouring them would assert
-  otherwise.
-- Use `_number(...)` around polars aggregations. They are typed loosely, and a
-  metric returning `None` would render as `None` in the report rather than
-  fail.
-- Put it in the headline KPI row by adding its key to the `headline` tuple in
-  `backtester/report/html.py`. Four is about the limit before a KPI row stops being a
-  headline.
-
-A test asserts every metric produces a real number, so a new one that returns
-a null or a NaN fails there rather than reaching the page.
-
-## What the report gives you
-
-One HTML file, no external assets, that still works when emailed:
-
-- **Headline tiles** per run — Sharpe, return, max drawdown, cost drag
-- **Equity and drawdown** with a hover crosshair reading every series at once
-- **Legend toggles** — click a run to hide it, which is the only practical way
-  to read six overlapping lines
-- **A sortable table** — runs as rows, click any metric to order by it
-- **Day / Night / Auto**, remembered between visits. Auto follows the system,
-  and the palette is two selected sets of colours rather than one flipped
-
-All of it inline. The interaction is presentational: hiding a series or sorting
-a column changes what is easy to read, never what the numbers are, and every
-value in a chart is also in the table.
-
----
+It gets a sortable column and its own tinting. Add its key to `headline` in
+`report/html.py` to put it in the KPI tiles.
 
 ## Deployment
 
-This is a **batch job, not a service.** No API, no uptime SLA: build an image,
-run it, collect an artifact.
+A batch job, not a service. Build an image, run it, collect an artifact.
 
 ```bash
 docker build -t backtester .
-
-# Ingest — the only step that touches the network. Run this on a schedule.
-docker run --rm -v "$PWD/data:/data" backtester \
-  ingest --root /data/us-equities
-
-# Backtest — offline, reads what ingestion landed.
+docker run --rm -v "$PWD/data:/data" backtester ingest --root /data/us-equities
 docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
-  backtest configs/momentum.yaml --root /data/us-equities --out /out
-
-docker run --rm -v "$PWD/out:/out" backtester report /out/<id> --out /out/report.html
+  run configs/momentum.yaml --root /data/us-equities --out /out
 ```
 
-**Scheduling.** Ingestion is a periodic job; nothing here configures a
-scheduler, because that is environment-specific and a job that runs by hand
-runs under cron. What matters to the design is that ingestion is decoupled from
-and asynchronous to the backtest.
+Ingestion is periodic. Nothing here configures a scheduler, because a job that
+runs by hand runs under cron:
 
 ```cron
-0 6 * * 1-5  docker run --rm -v /srv/backtester/data:/data backtester ingest --root /data/us-equities
+0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
 ```
 
-**Object storage.** The only thing that changes is the dataset root:
+Object storage changes one thing:
 
 ```bash
 backtester run configs/momentum.yaml --root s3://research/us-equities --region us-east-1
 ```
 
-`docker compose up` runs the whole shape against MinIO — one writer, several
-readers — with no AWS account. Workers only read, so they need no coordination
-between them; that is what append-only buys.
+`docker compose up` runs that shape against MinIO with no AWS account. Workers
+only read, so they need no coordination.
 
-**Logs** go to stderr and are not written to files. Cron mails them, Docker
-captures them, a scheduler collects them — writing our own would duplicate that
-and add rotation and cleanup problems the platform already solves.
+Logs go to stderr, not files: cron mails them, Docker captures them, a
+scheduler collects them. No secrets, since the data source is public.
 
-**No secrets** are needed: the data source is public. A paid vendor changes
-that.
+## More
 
----
-
-## Reading further
-
-- `docs/ASSUMPTIONS.md` — every judgement call, including the ones that make
-  these results optimistic
-- `docs/DESIGN_DECISIONS.md` — what was decided and why
-- `docs/limitations.md` — what was deliberately left out
-
-## Development
+- [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) — every judgement call, including
+  the ones that make these results optimistic
+- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — what was decided, and why
+- [`examples/`](examples/) — runnable versions of everything above
 
 ```bash
 make check      # lint, types, tests
 ```
 
-208 tests, all offline — the vendor call is substituted and everything
-downstream runs for real. CI runs the same checks on Python 3.11 to 3.13, then
-builds the container and runs commands inside it, because building is not
-running.
+221 tests, all offline. CI runs them on Python 3.11 to 3.13, then builds the
+container and runs commands inside it, because building is not running.
