@@ -37,7 +37,7 @@ packages = ["src/backtester"]
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -46,7 +46,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # No python_version pin: mypy targets whatever interpreter it runs under.
 # Forcing an older target makes it refuse to parse newer syntax in third-party
 # stubs, which is a tooling failure rather than a real type error.
-packages = ["backtester"]
+# Examples are illustrations, not part of the package, but they are checked
+# so they cannot go stale without anyone noticing.
+files = ["src", "examples"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 
