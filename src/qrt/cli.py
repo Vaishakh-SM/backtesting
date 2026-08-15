@@ -136,8 +136,9 @@ def report(
     from qrt.backtest.store import load_results
     from qrt.report.html import render
 
-    written = render(load_results(runs), out)
-    typer.echo(f"{written}  {len(runs)} run(s)")
+    results = load_results(runs)
+    written = render(results, out)
+    typer.echo(f"{written}  {len(results)} run(s)")
 
 
 @app.command()

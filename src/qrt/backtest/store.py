@@ -81,9 +81,18 @@ def load_result(directory: Path) -> BacktestResult:
     )
 
 
-def load_results(directories: Sequence[Path]) -> list[BacktestResult]:
-    """Read several runs, for a report that compares them."""
-    return [load_result(d) for d in directories]
+def load_results(paths: Sequence[Path]) -> list[BacktestResult]:
+    """Read several runs, for a report that compares them.
+
+    Paths that are plainly not runs are skipped rather than crashing, because
+    `qrt report out/*` is the obvious thing to type and the previous report is
+    sitting in that directory. A directory that looks like a run but has no
+    spec.json is still an error — that is a typo, not noise.
+    """
+    runs = [p for p in paths if p.is_dir()]
+    if not runs:
+        raise ValueError(f"no run directories among: {', '.join(str(p) for p in paths)}")
+    return [load_result(d) for d in runs]
 
 
 def _nameable(spec: BacktestSpec) -> BacktestSpec:
