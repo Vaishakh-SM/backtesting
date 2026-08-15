@@ -1,4 +1,4 @@
-"""Dividend adjustment.
+"""Dividend adjustment. Opt-in.
 
 On an ex-date the price drops by roughly the dividend, so raw closes read every
 distribution as a loss. XOM over 10-15 May 2024, around a $0.95 dividend:
@@ -10,9 +10,13 @@ The holder earned 1.34%. XOM pays quarterly, so unadjusted returns understate
 it by ~3.5% a year — a standing bias against high yielders in exactly the
 cross-sectional rank this platform exists to run.
 
-A plain function rather than a method on the view, so it can be tested against
-hand-computed cases on its own. Splits are not handled: Yahoo already
-back-adjusts for those (see yahoo.py).
+Whether to use it is the strategy author's call, not the platform's. On our
+thirty names it moves eight of thirty ranks over a sixty-session window but
+did not change which names landed in the top or bottom fifth, so for a
+cross-sectional rank it is second-order. It matters more for P&L, where a book
+long high yielders and short zero yielders actually receives and pays the cash.
+
+Splits are not handled: Yahoo already back-adjusts for those (see yahoo.py).
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from __future__ import annotations
 import polars as pl
 
 
-def adjust(prices: pl.DataFrame, actions: pl.DataFrame) -> pl.DataFrame:
+def dividend_adjusted(prices: pl.DataFrame, actions: pl.DataFrame) -> pl.DataFrame:
     """Return `prices` with an `adj_close` column.
 
     Back-adjusted: the latest bar keeps its quoted close, and every earlier bar

@@ -55,7 +55,7 @@ class MyStrategy(Strategy):
         return 30
 
     def generate_signal(self, view: MarketView) -> Mapping[str, float]:
-        prices = adjust(view.read(PRICES), view.read(ACTIONS))
+        prices = dividend_adjusted(view.read(PRICES), view.read(ACTIONS))
         ...
         return {"AAPL": 0.4, "MSFT": -0.1}
 ```

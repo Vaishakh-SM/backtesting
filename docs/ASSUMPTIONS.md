@@ -171,17 +171,28 @@ The one-day execution lag is configurable but defaults to 1. Assuming execution
 at the same close used to generate the signal is the single most common way a
 backtest reports impossible performance.
 
-**Returns are measured on dividend-adjusted prices; execution is not modelled
-separately.** On an ex-date a price drops by roughly the dividend, so returns
-computed on raw closes read every distribution as a loss. Over ten years that
-is a systematic bias against high yielders rather than a rounding error — a
-reversal strategy would keep buying them for losses nobody took.
+**Dividend adjustment is available but optional, and the shipped strategy uses
+it.** On an ex-date a price drops by roughly the dividend, so returns computed
+on raw closes read every distribution as a loss.
 
-A fuller system would trade at raw prices and book the dividend as cash
-received. For a weight-based dollar-neutral backtest with no financing the two
-are equivalent, so adjusted prices are used for both the signal and the P&L.
-That equivalence breaks as soon as borrow cost or margin is modelled, which is
-listed as out of scope below.
+Measured on this universe rather than assumed: dividend yields span 6.0% a year
+(PFE at 6.0%, several names at zero), which is up to 1.58% of return over a
+sixty-session window. That reshuffles eight of thirty ranks but did not change
+which names fell in the top or bottom fifth on the date checked — return
+dispersion over sixty sessions is an order of magnitude larger. So for a
+cross-sectional rank it is a second-order effect.
+
+It matters more for P&L, where a book long high yielders and short zero
+yielders genuinely receives and pays that cash.
+
+Left as a utility rather than applied automatically, because whether a signal
+should see total return or price return is the strategy author's decision, not
+the platform's.
+
+A fuller system would trade at raw prices and book the dividend as cash. For a
+weight-based dollar-neutral backtest with no financing the two are equivalent;
+that equivalence breaks once borrow cost or margin is modelled, which is out of
+scope below.
 
 **Splits are not adjusted in our code.** Yahoo already back-adjusts its price
 history for them, verified against AAPL's 2020 4-for-1. Split rows are still

@@ -22,8 +22,8 @@ class MarketView(Protocol):
     A strategy reads this and returns scores. It does not fetch data, does not
     know where data is stored, and does not write time filters itself.
 
-    Prices here are raw. Adjusting for splits and dividends is done in the
-    strategy with adjust(), so that logic stays testable on its own.
+    Prices here are raw. qrt.data.dividends.dividend_adjusted is available if a
+    strategy wants total-return prices; using it is the author's decision.
     """
 
     @property

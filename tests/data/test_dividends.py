@@ -11,7 +11,7 @@ import polars as pl
 import pytest
 
 from qrt.conventions import TZ
-from qrt.data.adjust import adjust
+from qrt.data.dividends import dividend_adjusted
 from tests.conftest import ts
 
 
@@ -47,7 +47,7 @@ def actions(*rows: tuple[str, int, str, float]) -> pl.DataFrame:
 
 
 def test_no_actions_leaves_prices_untouched() -> None:
-    out = adjust(prices(("AAPL", 5, 100.0), ("AAPL", 6, 101.0)), actions())
+    out = dividend_adjusted(prices(("AAPL", 5, 100.0), ("AAPL", 6, 101.0)), actions())
     assert out["adj_close"].to_list() == [100.0, 101.0]
 
 
@@ -55,7 +55,7 @@ def test_a_dividend_scales_earlier_bars_only() -> None:
     """Hand-computed. $1 on a $100 stock gives a factor of 0.99, applied to
     every bar before the ex-date. The ex-date bar itself keeps its close.
     """
-    out = adjust(
+    out = dividend_adjusted(
         prices(("AAPL", 5, 100.0), ("AAPL", 6, 100.0), ("AAPL", 7, 100.0)),
         actions(("AAPL", 7, "dividend", 1.0)),
     )
@@ -66,7 +66,7 @@ def test_the_return_across_an_ex_date_is_what_a_holder_earned() -> None:
     """The whole point. Raw closes say the stock went nowhere; the holder is up
     by the dividend."""
     raw = prices(("AAPL", 5, 100.0), ("AAPL", 6, 100.0))
-    out = adjust(raw, actions(("AAPL", 6, "dividend", 1.0)))
+    out = dividend_adjusted(raw, actions(("AAPL", 6, "dividend", 1.0)))
 
     a, b = out["adj_close"].to_list()
     assert b / a - 1 == pytest.approx(0.010101, abs=1e-6)
@@ -75,7 +75,7 @@ def test_the_return_across_an_ex_date_is_what_a_holder_earned() -> None:
 
 def test_several_dividends_compound() -> None:
     """0.99 * 0.98 on the earliest bar, 0.98 on the middle one."""
-    out = adjust(
+    out = dividend_adjusted(
         prices(("AAPL", 5, 100.0), ("AAPL", 6, 100.0), ("AAPL", 7, 100.0)),
         actions(("AAPL", 6, "dividend", 1.0), ("AAPL", 7, "dividend", 2.0)),
     )
@@ -85,7 +85,7 @@ def test_several_dividends_compound() -> None:
 def test_splits_are_ignored() -> None:
     """Yahoo has already back-adjusted for them. Applying the ratio here would
     divide the history a second time."""
-    out = adjust(
+    out = dividend_adjusted(
         prices(("AAPL", 5, 100.0), ("AAPL", 6, 25.0)),
         actions(("AAPL", 6, "split", 4.0)),
     )
@@ -95,7 +95,7 @@ def test_splits_are_ignored() -> None:
 def test_a_dividend_on_the_first_bar_has_nothing_to_adjust() -> None:
     """No earlier bar in the window to scale, and no prior close to reference.
     Must not produce nulls."""
-    out = adjust(
+    out = dividend_adjusted(
         prices(("AAPL", 5, 100.0), ("AAPL", 6, 101.0)),
         actions(("AAPL", 5, "dividend", 1.0)),
     )
@@ -104,7 +104,7 @@ def test_a_dividend_on_the_first_bar_has_nothing_to_adjust() -> None:
 
 def test_tickers_are_adjusted_independently() -> None:
     """A dividend from one name must not touch another's history."""
-    out = adjust(
+    out = dividend_adjusted(
         prices(("AAPL", 5, 100.0), ("AAPL", 6, 100.0), ("MSFT", 5, 50.0), ("MSFT", 6, 50.0)),
         actions(("AAPL", 6, "dividend", 1.0)),
     )
@@ -115,5 +115,5 @@ def test_tickers_are_adjusted_independently() -> None:
 
 def test_other_columns_survive() -> None:
     frame = prices(("AAPL", 5, 100.0)).with_columns(volume=pl.lit(1000))
-    out = adjust(frame, actions())
+    out = dividend_adjusted(frame, actions())
     assert set(out.columns) == {"ticker", "event_ts", "close", "volume", "adj_close"}

@@ -10,7 +10,7 @@ from collections.abc import Mapping
 
 import polars as pl
 
-from qrt.data.adjust import adjust
+from qrt.data.dividends import dividend_adjusted
 from qrt.data.schema import ACTIONS, PRICES
 from qrt.data.view import MarketView
 from qrt.strategy.base import Strategy
@@ -30,7 +30,7 @@ class TrailingReturn(Strategy):
         return self._lookback_sessions
 
     def generate_signal(self, view: MarketView) -> Mapping[str, float]:
-        prices = adjust(view.read(PRICES), view.read(ACTIONS))
+        prices = dividend_adjusted(view.read(PRICES), view.read(ACTIONS))
 
         first_last = (
             prices.sort("event_ts")
