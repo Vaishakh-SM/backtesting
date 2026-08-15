@@ -56,3 +56,11 @@ class DatasetRef:
             stmts.append("SET s3_use_ssl=false")
             stmts.append("SET s3_url_style='path'")
         return stmts
+
+
+class MissingData(ValueError):
+    """A table has no files yet. Raised by every reader, so the message and the
+    suggested fix live in one place."""
+
+    def __init__(self, ref: DatasetRef, table: str) -> None:
+        super().__init__(f"no {table} data at {ref.table(table)} — run `qrt ingest` first")

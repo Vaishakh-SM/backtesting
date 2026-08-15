@@ -75,5 +75,24 @@ UNIVERSE_SCHEMA = pa.schema(
     ]
 )
 
+# What identifies an observation, and what counts as its content.
+#
+# The key is what a restatement restates: two rows sharing a key are the same
+# fact asserted twice, and only the newest is read. Note that actions key on
+# `kind` as well — a dividend and a split can share an ex-date, and they are
+# two facts about that day rather than one correcting the other.
+#
+# The value columns are what "changed" means when deciding whether a re-fetch
+# has told us anything new.
+
+PRICES_KEY = ("ticker", "event_ts")
+PRICES_VALUES = ("open", "high", "low", "close", "volume")
+
+ACTIONS_KEY = ("ticker", "event_ts", "kind")
+ACTIONS_VALUES = ("value",)
+
+UNIVERSE_KEY = ("ticker", "event_ts")
+UNIVERSE_VALUES = ("in_universe",)
+
 # Deliberately no name -> schema dictionary. Callers reference the constant
 # they mean, so a typo is an import error rather than a KeyError at runtime.

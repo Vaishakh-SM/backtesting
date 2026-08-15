@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Literal, Protocol, runtime_checkable
+
+import polars as pl
 
 Format = Literal["polars", "pandas", "arrow"]
 
@@ -39,15 +42,19 @@ class MarketView(Protocol):
 
 
 class Snapshot:
-    """MarketView backed by frames the engine has already fetched."""
+    """MarketView backed by frames the engine has already fetched.
+
+    Holds frames rather than a connection, so it cannot widen its own bounds:
+    by the time a strategy sees one, the query that produced it is over.
+    """
 
     def __init__(
         self,
-        frames: dict[str, Any],
+        frames: Mapping[str, pl.DataFrame],
         as_of_event: datetime,
         as_of_knowledge: datetime,
     ) -> None:
-        self._frames = frames
+        self._frames = dict(frames)
         self._as_of_event = as_of_event
         self._as_of_knowledge = as_of_knowledge
 
@@ -60,4 +67,20 @@ class Snapshot:
         return self._as_of_knowledge
 
     def read(self, table: str, fmt: Format = "polars") -> Any:
-        raise NotImplementedError
+        """One table's rows in whichever frame the caller works in.
+
+        Arrow is the common currency between engines, so all three shapes are
+        one call away regardless of which reader fetched the window.
+        """
+        if table not in self._frames:
+            available = ", ".join(sorted(self._frames)) or "none"
+            raise KeyError(f"{table!r} was not fetched for this window (have: {available})")
+
+        frame = self._frames[table]
+        if fmt == "polars":
+            return frame
+        if fmt == "pandas":
+            return frame.to_pandas()
+        if fmt == "arrow":
+            return frame.to_arrow()
+        raise ValueError(f"unknown format {fmt!r}: expected polars, pandas or arrow")
