@@ -80,11 +80,17 @@ def write_configs(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def run(*args: str) -> str:
+    """Run a command, returning only what it wrote to stdout.
+
+    Deliberately not `result.output`: progress logging goes to stderr, and
+    reading both together is how a caller ends up parsing a log timestamp as a
+    result directory.
+    """
     result = runner.invoke(app, list(args))
     assert result.exit_code == 0, (
         f"`backtester {' '.join(args)}` failed:\n{result.output}\n{result.exception}"
     )
-    return result.output
+    return result.stdout
 
 
 def test_ingest_backtest_report(tmp_path: Path) -> None:
@@ -398,3 +404,52 @@ def test_backtesting_an_empty_store_says_what_to_do(tmp_path: Path) -> None:
 
 def test_the_strategies_command_lists_what_a_config_can_name() -> None:
     assert "trailing_return" in run("strategies")
+
+
+@pytest.mark.parametrize("command", ["ingest", "run", "report"])
+@pytest.mark.parametrize("flag", ["--quiet", "-q", "--debug"])
+def test_logging_flags_are_accepted_after_the_command(command: str, flag: str) -> None:
+    """Where a flag may be typed is not something anyone should have to learn.
+
+    These were originally on the app rather than on each command, so the
+    natural `backtester run --debug config.yaml` failed with "No such option"
+    and only `backtester --debug run ...` worked.
+    """
+    assert flag in runner.invoke(app, [command, "--help"]).output
+
+
+def test_progress_and_results_go_to_different_streams(tmp_path: Path) -> None:
+    """`backtester run ... > runs.txt` has to collect directories and nothing
+    else, so stdout carries only results and progress goes to stderr."""
+    universe, config = write_configs(tmp_path)
+    store, out = tmp_path / "store", tmp_path / "out"
+
+    run(
+        "ingest",
+        "--universe",
+        str(universe),
+        "--root",
+        str(store),
+        "--start",
+        "2024-01-01",
+        "--end",
+        "2024-06-30",
+    )
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(config),
+            "--universe",
+            str(universe),
+            "--root",
+            str(store),
+            "--out",
+            str(out),
+            "--debug",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert all(line.startswith(str(out)) for line in result.stdout.splitlines() if line.strip())
+    assert "DEBUG" in result.stderr and "DEBUG" not in result.stdout

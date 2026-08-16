@@ -29,13 +29,16 @@ NY = ZoneInfo(TZ)
 
 RootOpt = Annotated[str, typer.Option(help="Dataset root: a local path or s3://...")]
 
+# On each command rather than on the app, so they can be typed where a person
+# naturally types them: `backtester run --debug config.yaml`. As app-level
+# options they would only be accepted before the command name, which is a
+# distinction nobody should have to know.
+QuietOpt = Annotated[bool, typer.Option("--quiet", "-q", help="Errors only.")]
+DebugOpt = Annotated[bool, typer.Option("--debug", help="Every read and rebalance.")]
 
-@app.callback()
-def configure(
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Errors only.")] = False,
-    debug: Annotated[bool, typer.Option("--debug", help="Every read and rebalance.")] = False,
-) -> None:
-    """Set up logging before any command runs.
+
+def _configure(quiet: bool, debug: bool) -> None:
+    """Set logging up for one command.
 
     Progress goes to stderr and results go to stdout, so `backtester run ... >
     ids.txt` still collects only the directories while a person or a scheduler
@@ -50,6 +53,7 @@ def configure(
         format="%(asctime)s  %(levelname)-7s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stderr,
+        force=True,  # tests invoke several commands in one process
     )
 
 
@@ -71,9 +75,13 @@ def ingest(
     start: Annotated[str, typer.Option(help="First event date, YYYY-MM-DD.")] = "2015-01-01",
     end: Annotated[str, typer.Option(help="Last event date, YYYY-MM-DD. Defaults to today.")] = "",
     region: Annotated[str, typer.Option(help="For s3:// roots.")] = "us-east-1",
+    quiet: QuietOpt = False,
+    debug: DebugOpt = False,
 ) -> None:
     """Fetch and append market data. Run periodically; the only writer."""
     from backtester.data.ingest import ingest as run_ingest
+
+    _configure(quiet, debug)
 
     cfg = load_universe(universe)
     ref = DatasetRef(root, {"region": region} if "://" in root else {})
@@ -105,6 +113,8 @@ def run(
     root: RootOpt = "./data/us-equities",
     out: Annotated[Path, typer.Option(help="Where to write the result.")] = Path("out"),
     region: Annotated[str, typer.Option(help="For s3:// roots.")] = "us-east-1",
+    quiet: QuietOpt = False,
+    debug: DebugOpt = False,
 ) -> None:
     """Run the backtests a config file describes, and write each result.
 
@@ -120,6 +130,8 @@ def run(
     from backtester.engine.store import save_result
     from backtester.strategy import load_strategy
     from backtester.strategy.base import StrategyRef
+
+    _configure(quiet, debug)
 
     configs = load_backtest(config)
     names = load_universe(universe)
@@ -167,6 +179,8 @@ def run(
 def report(
     runs: Annotated[list[Path], typer.Argument(help="Result directories from `backtester run`.")],
     out: Annotated[Path, typer.Option()] = Path("out/report.html"),
+    quiet: QuietOpt = False,
+    debug: DebugOpt = False,
 ) -> None:
     """Render one report over one or more runs.
 
@@ -175,6 +189,8 @@ def report(
     """
     from backtester.engine.store import load_results
     from backtester.report.html import render
+
+    _configure(quiet, debug)
 
     results = load_results(runs)
     written = render(results, out)
