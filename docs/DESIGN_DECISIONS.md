@@ -237,9 +237,8 @@ file says. Nothing registers itself at import time.
 
 ## The engine
 
-**A spec is what changes the answer; a job is what schedules it.** They are
-separate types so the same spec runs anywhere and still produces the same
-result.
+**A spec holds what changes the answer, and nothing about dispatching it.** No
+connection, no output location, no run id.
 
 ```python
 @dataclass(frozen=True)
@@ -250,19 +249,19 @@ class BacktestSpec:                 # pure data: no connections, no live objects
     ...
     def content_id(self) -> str | None:
         """Hash of the canonical form. Same spec, same directory."""
-
-@dataclass(frozen=True)
-class BacktestJob:                  # dispatch only
-    spec: BacktestSpec
-    ref: DatasetRef                 # where this worker reads from
-    output_uri: str
-    run_id: str
 ```
 
-That split is what makes a grid work without coordination. `run_backtest(spec,
-ref)` is a pure function, and the content hash decides where the result lands,
-so N workers write to N distinct directories by construction and a redelivered
-job overwrites rather than duplicating.
+That is what makes a grid work without coordination. `run_backtest(spec, ref)`
+is a pure function, and the content hash decides where the result lands, so N
+workers write to N distinct directories by construction and a redelivered job
+overwrites rather than duplicating.
+
+There was a `BacktestJob` type here holding the spec plus a dataset reference,
+an output location and a run id. Nothing ever constructed one: the dispatch
+details it collected turned out to be exactly what each caller already had to
+hand, and `run_backtest(spec, ref)` plus an output path said the same thing
+with two existing arguments. It was removed rather than kept as documentation
+of an intent, since a type nothing builds still has to be read and maintained.
 
 **There is no capital or notional in a spec.** A weight-based dollar-neutral
 backtest gives the same returns and Sharpe at any size. Notional is a

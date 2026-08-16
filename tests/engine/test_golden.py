@@ -34,8 +34,6 @@ from tests.conftest import actions_table, prices_table, ts
 #   AAPL rises 20% over the signal window, MSFT 10%, NVDA falls 10%, XOM 20%.
 #
 # With top/bottom 25% of four names, that is one long and one short.
-SIGNAL_START = ts(2024, 3, 1)
-SIGNAL_END = ts(2024, 4, 30)
 
 QUARTERS = {"top_fraction": 0.25, "bottom_fraction": 0.25}
 

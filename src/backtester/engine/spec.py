@@ -1,8 +1,9 @@
-"""What to run, and where to run it.
+"""What to run.
 
-Two types, deliberately. A spec is everything that changes the answer. A job is
-everything about dispatching it. Keeping them apart is what lets the same spec
-run here or on a grid and produce the same result.
+A spec is everything that changes the answer, and nothing about dispatching it:
+no connection, no output location, no run id. That is what lets the same spec
+run here or on a grid and produce the same result, and what lets it travel as a
+queue message.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from backtester.conventions import TZ
-from backtester.data.dataset import DatasetRef
 from backtester.strategy.base import StrategyRef, StrategySpec
 
 
@@ -131,16 +131,6 @@ class BacktestSpec:
             cost_bps=raw["cost_bps"],
             code_version=raw.get("code_version", ""),
         )
-
-
-@dataclass(frozen=True)
-class BacktestJob:
-    """A unit of work. Scheduling details only."""
-
-    spec: BacktestSpec
-    ref: DatasetRef  # where this worker reads from
-    output_uri: str
-    run_id: str
 
 
 @dataclass(frozen=True)
