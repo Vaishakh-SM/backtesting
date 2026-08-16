@@ -20,6 +20,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 import yaml
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from backtester.cli import app
@@ -414,8 +415,14 @@ def test_logging_flags_are_accepted_after_the_command(command: str, flag: str) -
     These were originally on the app rather than on each command, so the
     natural `backtester run --debug config.yaml` failed with "No such option"
     and only `backtester --debug run ...` worked.
+
+    Asks the command what options it takes rather than reading `--help`, whose
+    text Typer wraps to the terminal width — an 80-column CI runner truncates
+    the option names, so the same assertion passed locally and failed there.
     """
-    assert flag in runner.invoke(app, [command, "--help"]).output
+    subcommand = get_command(app).commands[command]
+
+    assert flag in [option for param in subcommand.params for option in param.opts]
 
 
 def test_progress_and_results_go_to_different_streams(tmp_path: Path) -> None:
