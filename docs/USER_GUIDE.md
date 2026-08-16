@@ -76,6 +76,16 @@ latest_knowledge_ts(ref)          # from here on, identical to local
 Nothing else changes. The same `ref` goes to `ingest`, `run_backtest` and
 everything else, whichever kind it is.
 
+### Trying it without an AWS account
+
+`docker compose up` starts MinIO, which speaks the S3 API, then ingests and
+runs against it. That is how the S3 path here was tested end to end, including
+a check that the polars and duckdb readers return identical data.
+
+```bash
+docker compose up
+```
+
 ---
 
 ## Getting data in

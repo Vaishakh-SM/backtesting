@@ -240,24 +240,10 @@ Nothing in the repository sets up a scheduler, and nothing needs to. It is the
 same command you would run by hand, so anything that can run a command can run
 this.
 
-### Using S3 instead of a local directory
-
-Change the root; nothing else. Credentials are read from the environment, the
-same way any AWS tool reads them, so they never end up in a config file:
-
-```bash
-export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...   # or an instance role
-export AWS_ENDPOINT_URL=http://minio:9000                 # only for non-AWS S3
-
-backtester ingest --root s3://research/us-equities
-backtester run configs/momentum.yaml --root s3://research/us-equities --region us-east-1
-backtester report out/* --out out/report.html
-```
-
-The only settings written down are the region and, if you are not on AWS, the
-endpoint. This was tested end to end against MinIO, with both readers returning
-identical data. `docker compose up` starts that setup locally, so you can try it
-without an AWS account.
+The store can sit on S3 rather than a local directory, which is what lets many
+machines read the same data. Only the root changes, and credentials come from
+the environment as they would for any AWS tool:
+[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md#pointing-at-the-data).
 
 Logs go to stderr rather than to a file, which is what cron, Docker and job
 schedulers already know how to collect.
