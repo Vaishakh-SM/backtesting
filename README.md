@@ -21,13 +21,6 @@ backtester run configs/momentum.yaml              # three backtests, one per loo
 backtester report out/* --out out/report.html
 ```
 
-```
-out/33a52d230ed265ec  59 periods  final equity 1.0694
-out/34da444833259034  59 periods  final equity 1.0090
-out/a7ca452c5dcaadf9  59 periods  final equity 1.3931
-out/report.html  3 run(s)
-```
-
 Three runs because a config file is a list of backtests, and that one holds
 three: momentum over 20, 30 and 60 days. Settings they share are written once
 and pulled in with `<<: *base`, which is ordinary YAML:
@@ -57,8 +50,6 @@ Progress goes to stderr and the result lines to stdout, so
 `backtester run ... > runs.txt` keeps just the folders. Add `--quiet` for errors
 only, or `--debug` to see every rebalance.
 
-Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s per backtest. Ingest
-once; the backtests and the report read what it landed and need no network.
 
 ## Design
 
@@ -96,9 +87,7 @@ class VolAdjustedMomentum(Strategy):
         return rank_weights(scores, top_fraction=0.2, bottom_fraction=0.2)
 ```
 
-Sizing is yours. `rank_weights` does equal-weighted buckets; weight by
-conviction, cap positions, or hold everything instead if you prefer. The engine
-takes the `Allocation` and measures what it earned.
+You decide how much goes into each name. Here `rank_weights` splits the money evenly across the ones you pick, but you can decide allocation. The engine simply uses the allocation deicded by your strategy.
 
 Complete and runnable: [`examples/custom_strategy.py`](examples/custom_strategy.py).
 
@@ -280,7 +269,3 @@ schedulers already know how to collect.
 - [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) — every judgement call, including
   the ones that make these results optimistic
 - [`examples/`](examples/) — runnable versions of everything above
-
-```bash
-make check      # lint, types, tests
-```
