@@ -17,12 +17,48 @@ uv sync
 source .venv/bin/activate          # or prefix each command below with `uv run`
 
 backtester ingest                                 # fetch data; the only step needing network
-backtester run configs/momentum.yaml              # -> out/<id>/
-backtester report out/* --out out/report.html     # -> out/report.html
+backtester run configs/momentum.yaml              # three backtests, one per lookback
+backtester report out/* --out out/report.html
 ```
 
-Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest. Ingest
-once; the backtest and report read what it landed and need no network.
+```
+out/33a52d230ed265ec  59 periods  final equity 1.0694
+out/34da444833259034  59 periods  final equity 1.0090
+out/a7ca452c5dcaadf9  59 periods  final equity 1.3931
+out/report.html  3 run(s)
+```
+
+Three runs because a config file is a list of backtests, and that one holds
+three: momentum over 20, 30 and 60 days. Settings they share are written once
+and pulled in with `<<: *base`, which is ordinary YAML:
+
+```yaml
+- &base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 20, direction: 1, top_fraction: 0.2, bottom_fraction: 0.2}
+  universe: us-liquid-30
+  start: 2020-01-01
+  end: 2025-01-01
+  cost_bps: 10.0
+
+- <<: *base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 30, direction: 1, top_fraction: 0.2, bottom_fraction: 0.2}
+```
+
+A file with a single backtest in it is written plainly, without the list.
+
+Each run writes its own folder. The report takes as many folders as you give it
+and produces one page: a tab per run, plus a tab comparing them.
+
+Progress goes to stderr and the result lines to stdout, so
+`backtester run ... > runs.txt` keeps just the folders. Add `--quiet` for errors
+only, or `--debug` to see every rebalance.
+
+Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s per backtest. Ingest
+once; the backtests and the report read what it landed and need no network.
 
 ## Design
 
@@ -114,23 +150,40 @@ Results are written, not printed. `out/<id>/` holds `spec.json` and three
 parquet files, named by a hash of the spec, so re-running overwrites and
 different parameters land elsewhere.
 
-### Many at once
+### Many at once, on a grid
 
-`run_backtest` is pure and output is content-addressed, so workers need no
-coordination.
+Everything needed to run a backtest fits in a small piece of text, so one
+backtest can be sent to another machine as a message. There are two examples: one
+writes the messages, the other reads a message and runs it.
+
+This is a proof of concept, not a deployment. It uses a pipe where a real setup
+would use a queue, but the two halves are the ones you would actually deploy.
 
 ```bash
-python examples/parallel_sweep.py     # 6 backtests, ~5s
+python examples/grid_submit.py > queue.jsonl
+
+while read -r message; do
+    echo "$message" | STORE_ROOT=./data/us-equities OUT_ROOT=out python examples/grid_worker.py
+done < queue.jsonl
 ```
 
-Two things in [`examples/parallel_sweep.py`](examples/parallel_sweep.py) that
-are not guessable: use `spawn`, not the default `fork`, because polars keeps a
-thread pool and forking deadlocks with no error at all. And resolve
-`as_of_knowledge` once in the parent, or workers land on different cutoffs and
-stop comparing like with like.
+```
+7d86e6742c78f137  ->  out/7d86e6742c78f137
+85ec88486a52e855  ->  out/85ec88486a52e855
+3c070a38bc2f0db1  ->  out/3c070a38bc2f0db1
+```
 
-Same shape on a grid. A `BacktestSpec` is pure data, so it serialises to JSON
-and travels in a queue message.
+The machines never talk to each other. A result folder is named after the
+settings that produced it, so no two runs can collide, and sending the same
+message twice writes to the same folder instead of giving you two answers.
+
+The message says what to run, never where the data is. That comes from
+`STORE_ROOT`, which is why the same message works against a local folder here
+and against S3 on a grid.
+
+To use several cores on one machine instead of several machines, the same
+backtests run in a process pool:
+[`examples/parallel_sweep.py`](examples/parallel_sweep.py).
 
 ### The report
 
