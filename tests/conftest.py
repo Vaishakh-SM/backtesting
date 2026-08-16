@@ -90,7 +90,7 @@ def read_table(ref: DatasetRef, table: str) -> pl.DataFrame:
     Deliberately not the reader under test: assertions about what was *stored*
     should not depend on the deduplication being correct.
     """
-    return pl.scan_parquet(ref.scan(table), **ref.as_polars()).collect()
+    return pl.scan_parquet(ref.scan(table), **ref.polars_options()).collect()
 
 
 # Every reader test runs against both engines. Nothing forces the two to agree,

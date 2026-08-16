@@ -41,13 +41,18 @@ method per engine returning *configuration*, never a live connection —
 otherwise describing where files live would mean importing every engine.
 
 ```python
-    def as_polars(self) -> dict[str, Any]:      # kwargs for scan_parquet
+    def polars_options(self) -> dict[str, Any]:   # kwargs for scan_parquet
         ...
-    def as_duckdb(self) -> Sequence[str]:       # SQL to run before querying
-        ...                                     # empty for a local root
+    def duckdb_setup(self) -> Sequence[str]:      # SQL to run before querying
+        ...                                       # empty for a local root
 ```
 
-Supporting another engine is another `as_*` method. There is no query-engine
+Each is named for what it returns rather than for its engine, because what an
+engine needs differs in kind: polars takes keyword arguments, duckdb takes
+statements to execute against a connection. A symmetric pair of names would
+have implied the two are interchangeable.
+
+Supporting another engine is another such method. There is no query-engine
 interface, because in practice only a few engines exist and a method each is
 cheaper than a hierarchy.
 
@@ -56,7 +61,7 @@ Those get committed, and a spec travels through a queue. Only the region and an
 optional endpoint are configuration.
 
 polars and pyarrow read `AWS_*` themselves, so writes and the default reader
-need nothing further. DuckDB does not, so `as_duckdb` passes them explicitly —
+need nothing further. DuckDB does not, so `duckdb_setup` passes them explicitly —
 which is the kind of difference that is invisible until someone switches engine
 in production.
 

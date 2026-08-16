@@ -49,7 +49,7 @@ def read_window(
         # the host's. Without this the same window comes back stamped
         # differently on different machines.
         conn.execute(f"SET TimeZone = '{TZ}'")
-        for statement in ref.as_duckdb():
+        for statement in ref.duckdb_setup():
             conn.execute(statement)
 
         return conn.execute(

@@ -124,7 +124,7 @@ def test_pnl_matches_the_hand_computed_return(seeded: DatasetRef) -> None:
     result = run_backtest(spec_for(), seeded)
     first = result.returns.row(0, named=True)
 
-    prices = pl.scan_parquet(seeded.scan(PRICES), **seeded.as_polars()).collect()
+    prices = pl.scan_parquet(seeded.scan(PRICES), **seeded.polars_options()).collect()
 
     def close(ticker: str, when: datetime) -> float:
         row = prices.filter((pl.col("ticker") == ticker) & (pl.col("event_ts") == when))

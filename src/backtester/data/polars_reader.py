@@ -85,7 +85,7 @@ def earliest_knowledge_ts(ref: DatasetRef) -> datetime:
 
 
 def _scan(ref: DatasetRef, table: str) -> pl.LazyFrame:
-    return pl.scan_parquet(ref.scan(table), **ref.as_polars())
+    return pl.scan_parquet(ref.scan(table), **ref.polars_options())
 
 
 def _latest(frame: pl.LazyFrame, key: Sequence[str]) -> pl.LazyFrame:

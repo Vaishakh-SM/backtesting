@@ -18,9 +18,12 @@ class DatasetRef:
         DatasetRef("/data/us-equities")
         DatasetRef("s3://research/us-equities", {"region": "us-east-1"})
 
-    The as_* methods return configuration, never live connections, so this type
-    never imports an engine just to describe where files live. Supporting
-    another engine means adding another as_* method.
+    The per-engine methods return configuration, never live connections, so
+    this type never imports an engine just to describe where files live.
+    Supporting another engine means adding another such method. Each is named
+    for what it returns rather than for the engine alone, because what an
+    engine needs differs: polars takes keyword arguments, duckdb takes
+    statements to execute.
     """
 
     root: str
@@ -38,14 +41,14 @@ class DatasetRef:
         """Glob for one table. What a reader scans."""
         return f"{self.table(name)}/**/*.parquet"
 
-    def as_polars(self) -> dict[str, Any]:
+    def polars_options(self) -> dict[str, Any]:
         """Keyword arguments for pl.scan_parquet."""
         opts: dict[str, Any] = {"hive_partitioning": True}
         if self.is_remote:
             opts["storage_options"] = dict(self.storage_options)
         return opts
 
-    def as_duckdb(self) -> Sequence[str]:
+    def duckdb_setup(self) -> Sequence[str]:
         """SQL to run before querying. Empty for a local root.
 
         Credentials come from the environment, never from a spec or a config
