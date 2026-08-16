@@ -10,16 +10,21 @@ round numbers and nothing pays a dividend.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
+from backtester.conventions import TZ
 from backtester.data.dataset import DatasetRef
 from backtester.data.schema import ACTIONS, PRICES
 from backtester.data.writer import append
 from backtester.engine.runner import run_backtest
 from backtester.engine.spec import BacktestSpec
+from backtester.strategy.base import StrategyRef
 from backtester.strategy.trailing_return import TrailingReturn
 from tests.conftest import actions_table, prices_table, ts
 
@@ -186,6 +191,35 @@ def test_a_backtest_that_ends_before_it_can_be_marked_says_so(seeded: DatasetRef
     """
     with pytest.raises(ValueError, match="no holding period can be measured"):
         run_backtest(spec_for(strategy=TrailingReturn(120, 1, **QUARTERS)), seeded)
+
+
+def test_a_spec_that_has_been_through_a_queue_gives_the_same_answer(seeded: DatasetRef) -> None:
+    """The whole point of a spec being pure data is that a worker can rebuild it
+    from a message and get what the submitter would have got.
+
+    This is the only test that runs a spec that has actually been serialised.
+    Without it, JSON silently downgraded America/New_York to a fixed -04:00
+    offset: equal as an instant, a different column type to polars, and every
+    grid job failed on a comparison the local ones never made.
+    """
+    on_the_wire = json.dumps(
+        spec_for(
+            strategy=StrategyRef(
+                "trailing_return", {"lookback_sessions": 20, "direction": 1, **QUARTERS}
+            )
+        ).to_dict()
+    )
+    spec = BacktestSpec.from_dict(json.loads(on_the_wire))
+
+    assert spec.as_of_knowledge.tzinfo == ZoneInfo(TZ)
+    assert json.dumps(spec.to_dict()) == on_the_wire  # so redelivery lands in one place
+    assert_frame_equal(run_backtest(spec, seeded).returns, run_backtest(spec_for(), seeded).returns)
+
+
+def test_a_spec_refuses_a_timestamp_with_no_zone(seeded: DatasetRef) -> None:
+    """Guessing a zone is how a run silently shifts by five hours."""
+    with pytest.raises(ValueError, match="naive"):
+        spec_for(start=datetime(2024, 4, 1, 16))
 
 
 def test_a_universe_too_small_to_split_is_rejected(seeded: DatasetRef) -> None:
