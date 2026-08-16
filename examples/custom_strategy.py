@@ -66,6 +66,8 @@ class VolAdjustedMomentum(Strategy):
 
 def main() -> None:
     ref = DatasetRef("./data/us-equities")
+    # or ref = DatasetRef("s3://research/us-equities", {"region": "us-east-1"})
+
     universe = tuple(load_universe(Path("configs/universe.yaml")).tickers)
 
     # A live object, so no registration is needed. The result records that it
