@@ -1,4 +1,5 @@
 # backtester
+Design explanation & Demo video: https://youtu.be/ehyTVrR4tbA
 
 ## Prerequisites
 
