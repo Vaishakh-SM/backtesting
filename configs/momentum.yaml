@@ -1,20 +1,37 @@
-# 60-day momentum, rebalanced monthly.
-# Flip direction to -1 for short-term reversal — same strategy, opposite sign.
+# Momentum over three lookbacks, rebalanced monthly.
+#
+# A config file lists the backtests to run, so this one is three. Everything
+# they share is written once and pulled in with `<<: *base`, which is plain
+# YAML: no expansion rule to learn, and the file still reads as exactly the
+# set of runs it produces.
+#
+# Flip direction to -1 for short-term reversal, same strategy, opposite sign.
 
-strategy:
-  name: trailing_return
-  params:
-    lookback_sessions: 60
-    direction: 1
-    top_fraction: 0.2
-    bottom_fraction: 0.2
+- &base
+  strategy:
+    name: trailing_return
+    params:
+      lookback_sessions: 20
+      direction: 1
+      top_fraction: 0.2
+      bottom_fraction: 0.2
 
-universe: us-liquid-30
+  universe: us-liquid-30
 
-start: 2020-01-01
-end: 2025-01-01
+  start: 2020-01-01
+  end: 2025-01-01
 
-rebalance_frequency: M
-execution_lag_sessions: 1
-cost_bps: 10.0
-point_in_time: true
+  rebalance_frequency: M
+  execution_lag_sessions: 1
+  cost_bps: 10.0
+  point_in_time: true
+
+- <<: *base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 30, direction: 1, top_fraction: 0.2, bottom_fraction: 0.2}
+
+- <<: *base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 60, direction: 1, top_fraction: 0.2, bottom_fraction: 0.2}
