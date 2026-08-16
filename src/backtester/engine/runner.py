@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -24,6 +25,8 @@ from backtester.engine.spec import BacktestResult, BacktestSpec
 from backtester.strategy import Strategy, load_strategy
 from backtester.strategy.portfolio import Allocation, linear_cost, turnover
 
+logger = logging.getLogger(__name__)
+
 
 def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
     """Run a spec against a store. Knows nothing about scheduling.
@@ -43,6 +46,15 @@ def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
 
     _check_knowledge_covers(ref, rebalances[0], spec)
 
+    logger.info(
+        "%d rebalances, %s to %s, %d names, knowledge capped at %s",
+        len(rebalances),
+        spec.start.date(),
+        spec.end.date(),
+        len(spec.universe),
+        spec.as_of_knowledge.date(),
+    )
+
     scores: list[dict[str, object]] = []
     positions: list[dict[str, object]] = []
     book: list[tuple[datetime, Allocation]] = []
@@ -50,11 +62,22 @@ def run_backtest(spec: BacktestSpec, ref: DatasetRef) -> BacktestResult:
     for rebalance_ts in rebalances:
         window = _signal_window(ref, spec, strategy, rebalance_ts)
         if window is None:
-            continue  # not enough history behind this date yet
+            # Debug rather than info: on a long backtest the leading rebalances
+            # are routinely skipped while the lookback fills, and warning about
+            # each would train the reader to ignore the log.
+            logger.debug(
+                "%s skipped: fewer than %d sessions behind it",
+                rebalance_ts.date(),
+                strategy.lookback_sessions,
+            )
+            continue
 
         allocation = strategy.allocate(window)
         if not allocation.weights:
+            logger.debug("%s: strategy held nothing", rebalance_ts.date())
             continue
+
+        logger.debug("%s: %d positions", rebalance_ts.date(), len(allocation.weights))
 
         scores += [
             {"rebalance_ts": rebalance_ts, "ticker": t, "score": s}

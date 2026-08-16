@@ -17,12 +17,48 @@ uv sync
 source .venv/bin/activate          # or prefix each command below with `uv run`
 
 backtester ingest                                 # fetch data; the only step needing network
-backtester run configs/momentum.yaml              # -> out/<id>/
-backtester report out/* --out out/report.html     # -> out/report.html
+backtester run configs/momentum.yaml              # three backtests, one per lookback
+backtester report out/* --out out/report.html
 ```
 
-Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s to backtest. Ingest
-once; the backtest and report read what it landed and need no network.
+```
+out/33a52d230ed265ec  59 periods  final equity 1.0694
+out/34da444833259034  59 periods  final equity 1.0090
+out/a7ca452c5dcaadf9  59 periods  final equity 1.3931
+out/report.html  3 run(s)
+```
+
+Three runs because a config file is a list of backtests, and that one holds
+three: momentum over 20, 30 and 60 days. Settings they share are written once
+and pulled in with `<<: *base`, which is ordinary YAML:
+
+```yaml
+- &base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 20, direction: 1, top_fraction: 0.2, bottom_fraction: 0.2}
+  universe: us-liquid-30
+  start: 2020-01-01
+  end: 2025-01-01
+  cost_bps: 10.0
+
+- <<: *base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 30, direction: 1, top_fraction: 0.2, bottom_fraction: 0.2}
+```
+
+A file with a single backtest in it is written plainly, without the list.
+
+Each run writes its own folder. The report takes as many folders as you give it
+and produces one page: a tab per run, plus a tab comparing them.
+
+Progress goes to stderr and the result lines to stdout, so
+`backtester run ... > runs.txt` keeps just the folders. Add `--quiet` for errors
+only, or `--debug` to see every rebalance.
+
+Thirty names over ten years: ~17s to ingest, ~4 MB, ~2s per backtest. Ingest
+once; the backtests and the report read what it landed and need no network.
 
 ## Design
 
@@ -114,23 +150,40 @@ Results are written, not printed. `out/<id>/` holds `spec.json` and three
 parquet files, named by a hash of the spec, so re-running overwrites and
 different parameters land elsewhere.
 
-### Many at once
+### Many at once, on a grid
 
-`run_backtest` is pure and output is content-addressed, so workers need no
-coordination.
+Everything needed to run a backtest fits in a small piece of text, so one
+backtest can be sent to another machine as a message. There are two examples: one
+writes the messages, the other reads a message and runs it.
+
+This is a proof of concept, not a deployment. It uses a pipe where a real setup
+would use a queue, but the two halves are the ones you would actually deploy.
 
 ```bash
-python examples/parallel_sweep.py     # 6 backtests, ~5s
+python examples/grid_submit.py > queue.jsonl
+
+while read -r message; do
+    echo "$message" | STORE_ROOT=./data/us-equities OUT_ROOT=out python examples/grid_worker.py
+done < queue.jsonl
 ```
 
-Two things in [`examples/parallel_sweep.py`](examples/parallel_sweep.py) that
-are not guessable: use `spawn`, not the default `fork`, because polars keeps a
-thread pool and forking deadlocks with no error at all. And resolve
-`as_of_knowledge` once in the parent, or workers land on different cutoffs and
-stop comparing like with like.
+```
+7d86e6742c78f137  ->  out/7d86e6742c78f137
+85ec88486a52e855  ->  out/85ec88486a52e855
+3c070a38bc2f0db1  ->  out/3c070a38bc2f0db1
+```
 
-Same shape on a grid. A `BacktestSpec` is pure data, so it serialises to JSON
-and travels in a queue message.
+The machines never talk to each other. A result folder is named after the
+settings that produced it, so no two runs can collide, and sending the same
+message twice writes to the same folder instead of giving you two answers.
+
+The message says what to run, never where the data is. That comes from
+`STORE_ROOT`, which is why the same message works against a local folder here
+and against S3 on a grid.
+
+To use several cores on one machine instead of several machines, the same
+backtests run in a process pool:
+[`examples/parallel_sweep.py`](examples/parallel_sweep.py).
 
 ### The report
 
@@ -161,25 +214,25 @@ It gets a sortable column and its own tinting. Add its key to `headline` in
 
 ## Deployment
 
-For grid hosts, schedulers and CI. Everything above runs from a checkout; this
-is the same work on a machine with no Python and nobody watching.
+Everything above assumes you are at a terminal with the repository checked out.
+This section runs the same commands inside a container instead, for machines
+where nobody is watching: cron, CI, a grid. The container brings its own Python,
+so the host only needs Docker.
 
-Two jobs, neither a service, with the store between them. That gap is why a
-backtest runs offline and never depends on vendor uptime.
+There are two independent jobs with the data store between them. Neither is a
+server; each one starts, does its work, and exits.
 
-**Ingestion** touches the network and writes to the store. It produces no
-artifact; the store *is* the output. Periodic here, on demand locally:
+- **Ingestion** downloads prices and writes them to the store. It is the only
+  part that uses the network, and it produces no file of its own. The store is
+  its output.
+- **Backtests** read the store and write their results. They never use the
+  network, and they do not talk to each other, so you can run as many at once as
+  you have machines for.
 
-```cron
-0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
-```
-
-Nothing in the repository configures a scheduler. The command is the same one
-you run by hand, which is the point: a job that runs by hand runs under cron
-unchanged.
-
-**Backtests** read the store and write an artifact. They coordinate with
-nothing, so a grid can run as many as it has workers for.
+Splitting them is what makes a backtest repeatable. If the data provider is
+slow, down, or quietly returns a different answer today, only the ingestion job
+sees it. A backtest reads what is already stored, so it gives the same result
+next week as it did today.
 
 ```bash
 docker build -t backtester .
@@ -188,9 +241,20 @@ docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/out:/out" backtester \
   run configs/momentum.yaml --root /data/us-equities --out /out
 ```
 
-Object storage changes the root, on every command that touches the store.
-Credentials come from the environment like any other AWS tool, never from a
-config file:
+Ingestion is the job you would schedule, because new prices arrive daily:
+
+```cron
+0 6 * * 1-5  docker run --rm -v /srv/data:/data backtester ingest --root /data/us-equities
+```
+
+Nothing in the repository sets up a scheduler, and nothing needs to. It is the
+same command you would run by hand, so anything that can run a command can run
+this.
+
+### Using S3 instead of a local directory
+
+Change the root; nothing else. Credentials are read from the environment, the
+same way any AWS tool reads them, so they never end up in a config file:
 
 ```bash
 export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...   # or an instance role
@@ -201,13 +265,13 @@ backtester run configs/momentum.yaml --root s3://research/us-equities --region u
 backtester report out/* --out out/report.html
 ```
 
-Only the region and the optional endpoint are configuration; nothing secret is
-ever written down. Verified end to end against MinIO — ingest, backtest and
-report over `s3://`, with polars and duckdb returning identical frames.
-`docker compose up` runs that shape with no AWS account.
+The only settings written down are the region and, if you are not on AWS, the
+endpoint. This was tested end to end against MinIO, with both readers returning
+identical data. `docker compose up` starts that setup locally, so you can try it
+without an AWS account.
 
-Logs go to stderr, not files: cron mails them, Docker captures them, a
-scheduler collects them. No secrets, since the data source is public.
+Logs go to stderr rather than to a file, which is what cron, Docker and job
+schedulers already know how to collect.
 
 ## More
 

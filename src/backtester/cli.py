@@ -7,6 +7,8 @@ every backtest depend on vendor uptime.
 
 from __future__ import annotations
 
+import logging
+import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
@@ -21,9 +23,34 @@ from backtester.data.dataset import DatasetRef
 
 app = typer.Typer(add_completion=False, help="Backtesting platform.")
 
+logger = logging.getLogger(__name__)
+
 NY = ZoneInfo(TZ)
 
 RootOpt = Annotated[str, typer.Option(help="Dataset root: a local path or s3://...")]
+
+
+@app.callback()
+def configure(
+    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Errors only.")] = False,
+    debug: Annotated[bool, typer.Option("--debug", help="Every read and rebalance.")] = False,
+) -> None:
+    """Set up logging before any command runs.
+
+    Progress goes to stderr and results go to stdout, so `backtester run ... >
+    ids.txt` still collects only the directories while a person or a scheduler
+    watches the rest.
+
+    The library never configures logging itself. It only ever asks for a logger,
+    so importing it into a notebook or a service leaves that program's own
+    logging setup alone.
+    """
+    logging.basicConfig(
+        level=logging.ERROR if quiet else logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s  %(levelname)-7s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        stream=sys.stderr,
+    )
 
 
 def _parse_day(value: str, hour: int) -> datetime:
@@ -79,10 +106,13 @@ def run(
     out: Annotated[Path, typer.Option(help="Where to write the result.")] = Path("out"),
     region: Annotated[str, typer.Option(help="For s3:// roots.")] = "us-east-1",
 ) -> None:
-    """Run a backtest over data already in the store, and write the result.
+    """Run the backtests a config file describes, and write each result.
 
-    Writes rather than prints, so a report can be produced later — and so a
-    sweep leaves one directory per parameter set to report over together.
+    A file listing several backtests runs them in sequence, one directory each,
+    so a single report can cover the lot.
+
+    Writes rather than prints, so a report can be produced later without
+    re-running anything.
     """
     from backtester.data.polars_reader import latest_knowledge_ts
     from backtester.engine.runner import run_backtest
@@ -91,48 +121,56 @@ def run(
     from backtester.strategy import load_strategy
     from backtester.strategy.base import StrategyRef
 
-    cfg = load_backtest(config)
+    configs = load_backtest(config)
     names = load_universe(universe)
-    if cfg.universe != names.name:
-        raise typer.BadParameter(
-            f"config wants universe {cfg.universe!r}, {universe} is {names.name!r}"
-        )
+    for cfg in configs:
+        if cfg.universe != names.name:
+            raise typer.BadParameter(
+                f"config wants universe {cfg.universe!r}, {universe} is {names.name!r}"
+            )
 
     ref = DatasetRef(root, {"region": region} if "://" in root else {})
-    strategy = StrategyRef(cfg.strategy.name, cfg.strategy.params)
-    load_strategy(strategy)  # fail here on a bad name or bad params, not mid-run
 
-    spec = BacktestSpec(
-        universe=tuple(names.tickers),
-        start=_at_close(cfg.start),
-        end=_at_close(cfg.end),
-        strategy=strategy,
-        # Resolved once, here, so a fan-out cannot see different cutoffs.
-        as_of_knowledge=latest_knowledge_ts(ref),
-        point_in_time=cfg.point_in_time,
-        rebalance_frequency=cfg.rebalance_frequency,
-        execution_lag_sessions=cfg.execution_lag_sessions,
-        cost_bps=cfg.cost_bps,
-        code_version=__version__,
-    )
+    strategies = [StrategyRef(cfg.strategy.name, cfg.strategy.params) for cfg in configs]
+    for strategy in strategies:  # fail on a bad name or params before running any
+        load_strategy(strategy)
 
-    result = run_backtest(spec, ref)
-    directory = save_result(result, out)
+    # Resolved once for the file, so runs meant to be compared cannot end up
+    # reading the store as of different moments.
+    cutoff = latest_knowledge_ts(ref)
 
-    final = result.returns["equity"][-1]
-    typer.echo(f"{directory}  {result.returns.height} periods  final equity {final:.4f}")
+    for position, (cfg, strategy) in enumerate(zip(configs, strategies, strict=True), start=1):
+        if len(configs) > 1:
+            logger.info("run %d of %d: %s", position, len(configs), dict(strategy.params))
+
+        spec = BacktestSpec(
+            universe=tuple(names.tickers),
+            start=_at_close(cfg.start),
+            end=_at_close(cfg.end),
+            strategy=strategy,
+            as_of_knowledge=cutoff,
+            point_in_time=cfg.point_in_time,
+            rebalance_frequency=cfg.rebalance_frequency,
+            execution_lag_sessions=cfg.execution_lag_sessions,
+            cost_bps=cfg.cost_bps,
+            code_version=__version__,
+        )
+
+        result = run_backtest(spec, ref)
+        directory = save_result(result, out)
+
+        final = result.returns["equity"][-1]
+        typer.echo(f"{directory}  {result.returns.height} periods  final equity {final:.4f}")
 
 
 @app.command()
 def report(
-    runs: Annotated[
-        list[Path], typer.Argument(help="Result directories from `backtester backtest`.")
-    ],
+    runs: Annotated[list[Path], typer.Argument(help="Result directories from `backtester run`.")],
     out: Annotated[Path, typer.Option()] = Path("out/report.html"),
 ) -> None:
     """Render one report over one or more runs.
 
-    Reads what `backtester backtest` wrote, so a sweep of parameter sets becomes one
+    Reads what `backtester run` wrote, so a sweep of parameter sets becomes one
     document without re-running anything.
     """
     from backtester.engine.store import load_results

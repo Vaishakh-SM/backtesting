@@ -53,5 +53,24 @@ def load_universe(path: Path) -> UniverseConfig:
     return UniverseConfig(**yaml.safe_load(path.read_text()))
 
 
-def load_backtest(path: Path) -> BacktestConfig:
-    return BacktestConfig(**yaml.safe_load(path.read_text()))
+def load_backtest(path: Path) -> list[BacktestConfig]:
+    """The backtests a file describes. A list of them, or one on its own.
+
+    Comparing parameter sets is the ordinary thing to do, so a file holds as
+    many backtests as you like. Each is written out in full rather than derived
+    from a base by some expansion rule, which keeps the file readable as exactly
+    the set of runs it produces. Where that repeats too much, YAML's own anchors
+    remove the repetition without this needing an opinion about it:
+
+        - &base
+          strategy: {name: trailing_return, params: {lookback_sessions: 20}}
+          universe: us-liquid-30
+          ...
+        - <<: *base
+          strategy: {name: trailing_return, params: {lookback_sessions: 60}}
+    """
+    raw = yaml.safe_load(path.read_text())
+    entries = raw if isinstance(raw, list) else [raw]
+    if not entries:
+        raise ValueError(f"{path} describes no backtests")
+    return [BacktestConfig(**entry) for entry in entries]

@@ -126,13 +126,46 @@ in a config:
 
 ```bash
 backtester run configs/momentum.yaml
+# out/33a52d230ed265ec  59 periods  final equity 1.0694
+# out/34da444833259034  59 periods  final equity 1.0090
 # out/a7ca452c5dcaadf9  59 periods  final equity 1.3931
 
 backtester run configs/momentum.yaml --root s3://research/us-equities --out /out
 ```
 
+Three lines because a config file is a list of backtests. Each entry is written
+out in full, so the file reads as exactly the runs it produces; YAML's own
+anchors keep the shared settings in one place.
+
+```yaml
+- &base
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 20, direction: 1, top_fraction: 0.2}
+  universe: us-liquid-30
+  start: 2020-01-01
+  end: 2025-01-01
+  cost_bps: 10.0
+
+- <<: *base                       # everything above, with these changes
+  strategy:
+    name: trailing_return
+    params: {lookback_sessions: 60, direction: 1, top_fraction: 0.2}
+
+- <<: *base                       # entries can differ in anything, not just params
+  cost_bps: 25.0
+```
+
+A single backtest is written plainly, with no list. Because entries are whole
+configs, one file can compare different strategies, cost assumptions or date
+ranges, not only different parameters.
+
 The result is written, never printed: `out/<id>/` holds `spec.json` and three
 parquet files, named by a hash of the spec.
+
+Progress goes to stderr and result lines to stdout, so
+`backtester run ... > runs.txt` collects only the directories. `--quiet` for
+errors only, `--debug` for every rebalance and every skipped window.
 
 **Python** — pass the strategy object; nothing needs registering, so a class
 defined in the cell above works:
@@ -302,31 +335,60 @@ Runnable version: [`examples/parallel_sweep.py`](../examples/parallel_sweep.py).
 
 ## Running on a grid
 
-A spec is pure data, so it serialises and travels in a queue message.
+A spec is pure data, so it serialises and travels in a queue message. Two
+processes instead of one: a submitter that publishes, and workers that consume.
 
 ```python
-# submitter
-message = json.dumps(spec.to_dict())         # 376 bytes
-spec.content_id()                            # "3bb80c5b8061562a" — where the result lands
+# submitter: everything the workers must agree on is decided once, here
+cutoff = latest_knowledge_ts(ref)
+for lookback in (20, 60, 120):
+    spec = BacktestSpec(
+        ...,
+        strategy=StrategyRef("trailing_return", {"lookback_sessions": lookback}),
+        as_of_knowledge=cutoff,
+    )
+    print(json.dumps(spec.to_dict()))        # ~380 bytes; publish it
 ```
 
-The worker is the CLI's shape rather than a notebook's: it resolves the
-strategy by name, so it can run the same container image with no code of yours
-in it.
-
 ```python
-# worker
-spec = BacktestSpec.from_dict(json.loads(message))
-save_result(run_backtest(spec, DatasetRef(os.environ["STORE_ROOT"])), Path("/out"))
+# worker: rebuilds the strategy by name, so it runs a stock image with none of
+# your code in it. Where the data is comes from the environment, not the message.
+spec = BacktestSpec.from_dict(json.loads(sys.stdin.read()))
+ref = DatasetRef(os.environ["STORE_ROOT"])
+save_result(run_backtest(spec, ref), Path(os.environ["OUT_ROOT"]))
+```
+
+Runnable, and this is the whole deployment shape with a queue in place of the
+loop: [`examples/grid_submit.py`](../examples/grid_submit.py) and
+[`examples/grid_worker.py`](../examples/grid_worker.py).
+
+```bash
+python examples/grid_submit.py | while read -r message; do
+    echo "$message" | STORE_ROOT=./data/us-equities OUT_ROOT=out python examples/grid_worker.py
+done
+```
+
+```
+7d86e6742c78f137  ->  out/7d86e6742c78f137
+85ec88486a52e855  ->  out/85ec88486a52e855
+3c070a38bc2f0db1  ->  out/3c070a38bc2f0db1
 ```
 
 Nothing coordinates. The content hash decides the directory, so N workers write
-to N distinct places and a redelivered message overwrites rather than
-duplicating.
+to N distinct places, and feeding the same message in twice prints the same
+directory rather than producing a second answer.
 
-Use a `StrategyRef` rather than a live object here: a worker can only rebuild a
-strategy it can look up. A spec holding a live object reports
-`is_reproducible() == False` and has no `content_id`.
+Two things the message must get right:
+
+- **Name the strategy, do not pass an object.** A worker can only rebuild one it
+  can look up. A spec holding a live object reports `is_reproducible() == False`
+  and has no `content_id`, so there is nowhere for the result to go.
+- **Resolve `as_of_knowledge` in the submitter.** Workers that each ask for
+  "latest" can land on different cutoffs, and the sweep stops comparing like
+  with like.
+
+Keeping the store location out of the message is what lets the same message run
+against a local directory here and `s3://` on a grid.
 
 ## Adding a metric
 

@@ -13,7 +13,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from backtester.conventions import TZ
 from backtester.data.dataset import DatasetRef
 from backtester.strategy.base import StrategyRef, StrategySpec
 
@@ -50,6 +52,28 @@ class BacktestSpec:
 
     # Same spec, different code, different answer.
     code_version: str = ""
+
+    def __post_init__(self) -> None:
+        """Put every timestamp in the exchange's own zone.
+
+        A datetime survives JSON as an offset, not as a zone: `16:00-04:00`
+        comes back as a fixed -04:00 rather than as America/New_York. The two
+        are the same instant and compare equal in Python, but polars types them
+        as different columns and refuses to compare them, so a spec that has
+        been through a queue fails against a store written in named-zone time.
+
+        Normalising here rather than in `from_dict` covers every way a spec is
+        built, and makes the content id depend on the instant rather than on how
+        the caller happened to spell the zone.
+        """
+        for field_name in ("start", "end", "as_of_knowledge"):
+            value: datetime = getattr(self, field_name)
+            if value.tzinfo is None:
+                raise ValueError(
+                    f"{field_name} is naive. A backtest reads timestamped data, "
+                    "so an instant without a zone has no defined meaning."
+                )
+            object.__setattr__(self, field_name, value.astimezone(ZoneInfo(TZ)))
 
     def is_reproducible(self) -> bool:
         """A spec holding a live object cannot be rebuilt from itself."""

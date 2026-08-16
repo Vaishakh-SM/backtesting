@@ -25,6 +25,7 @@ Two things about Yahoo that shape the rest of the design:
 from __future__ import annotations
 
 import functools
+import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -38,6 +39,8 @@ from yfinance import exceptions as yfe
 
 from backtester.conventions import CLOSE_HOUR, TZ
 from backtester.data.schema import ACTIONS_SCHEMA, PRICES_SCHEMA
+
+logger = logging.getLogger(__name__)
 
 SOURCE = "yfinance"
 
@@ -117,17 +120,23 @@ def fetch(tickers: Sequence[str], start: datetime, end: datetime) -> Fetched:
     action_frames: list[pd.DataFrame] = []
     failed: dict[str, str] = {}
 
-    for ticker in tickers:
+    total = len(tickers)
+    for position, ticker in enumerate(tickers, start=1):
         try:
             raw = _history(ticker, start, end)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not stop the batch
+            # Logged as it happens as well as summarised at the end: a run that
+            # hangs on ticker 19 of 30 should say so while it is still hanging.
+            logger.warning("[%d/%d] %s failed: %s", position, total, ticker, exc)
             failed[ticker] = f"{type(exc).__name__}: {exc}"
             continue
 
         if raw.empty:
+            logger.warning("[%d/%d] %s returned no rows", position, total, ticker)
             failed[ticker] = "no rows returned"
             continue
 
+        logger.info("[%d/%d] %s: %d bars", position, total, ticker, len(raw))
         event_ts = _event_ts(pd.DatetimeIndex(raw.index))
         price_frames.append(_prices(raw, event_ts, ticker))
         action_frames.append(_actions(raw, event_ts, ticker))

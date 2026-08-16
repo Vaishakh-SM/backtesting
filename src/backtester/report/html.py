@@ -15,12 +15,15 @@ answering both on one page answers neither.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from backtester.engine.spec import BacktestResult
 from backtester.report.charts import Series, legend, line_chart
 from backtester.report.metrics import METRICS, compute
+
+logger = logging.getLogger(__name__)
 
 MAX_SERIES = 8  # the categorical ceiling; past it identity stops being readable
 
@@ -410,6 +413,7 @@ def render(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html)
+    logger.info("rendered %d run(s) into %s (%.0f kB)", len(results), output_path, len(html) / 1000)
     return output_path
 
 

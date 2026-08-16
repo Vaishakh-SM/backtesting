@@ -21,6 +21,7 @@ job twice does not produce two answers.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
@@ -31,6 +32,8 @@ import polars as pl
 from backtester.engine.spec import BacktestResult, BacktestSpec
 from backtester.strategy import as_ref
 from backtester.strategy.base import Strategy, StrategyRef
+
+logger = logging.getLogger(__name__)
 
 SPEC_FILE = "spec.json"
 FRAMES = ("returns", "positions", "scores")
@@ -65,6 +68,7 @@ def save_result(result: BacktestResult, root: Path) -> Path:
     for name in FRAMES:
         getattr(result, name).write_parquet(directory / f"{name}.parquet")
 
+    logger.info("wrote %s%s", directory, "" if named else " (not reproducible)")
     return directory
 
 

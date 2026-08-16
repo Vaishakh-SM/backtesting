@@ -19,6 +19,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from backtester.cli import app
@@ -225,7 +226,53 @@ def test_positions_are_held_from_the_session_after_the_signal(tmp_path: Path) ->
 
 def test_a_sweep_becomes_one_report(tmp_path: Path) -> None:
     """The reason results are files: several parameter sets, reported together
-    without re-running any of them."""
+    without re-running any of them.
+
+    One config, one command, three runs. Each result stands alone on disk, so
+    the report is a separate step over whatever is there.
+    """
+    universe, config = write_configs(tmp_path)
+    store, out = tmp_path / "store", tmp_path / "out"
+
+    one = yaml.safe_load(config.read_text())
+    config.write_text(
+        yaml.safe_dump(
+            [
+                one | {"strategy": one["strategy"] | {"params": one["strategy"]["params"] | p}}
+                for p in ({"lookback_sessions": n} for n in (5, 10, 20))
+            ]
+        )
+    )
+
+    run(
+        "ingest",
+        "--universe",
+        str(universe),
+        "--root",
+        str(store),
+        "--start",
+        "2024-01-01",
+        "--end",
+        "2024-06-30",
+    )
+
+    output = run(
+        "run", str(config), "--universe", str(universe), "--root", str(store), "--out", str(out)
+    )
+    directories = [line.split()[0] for line in output.splitlines() if line.strip()]
+
+    assert len(directories) == 3, f"one line per run expected, got:\n{output}"
+    assert len(set(directories)) == 3, "different parameters must not share a directory"
+
+    report = tmp_path / "sweep.html"
+    run("report", *directories, "--out", str(report))
+
+    html = report.read_text()
+    assert all(f"lookback {n}" in html for n in (5, 10, 20))
+
+
+def test_a_config_without_a_sweep_is_still_one_run(tmp_path: Path) -> None:
+    """Sweeping is opt-in. The ordinary config must not become a fan-out."""
     universe, config = write_configs(tmp_path)
     store, out = tmp_path / "store", tmp_path / "out"
 
@@ -240,33 +287,11 @@ def test_a_sweep_becomes_one_report(tmp_path: Path) -> None:
         "--end",
         "2024-06-30",
     )
+    output = run(
+        "run", str(config), "--universe", str(universe), "--root", str(store), "--out", str(out)
+    )
 
-    directories = []
-    for lookback in (10, 20):
-        variant = tmp_path / f"m{lookback}.yaml"
-        variant.write_text(
-            config.read_text().replace("lookback_sessions: 20", f"lookback_sessions: {lookback}")
-        )
-        directories.append(
-            run(
-                "run",
-                str(variant),
-                "--universe",
-                str(universe),
-                "--root",
-                str(store),
-                "--out",
-                str(out),
-            ).split()[0]
-        )
-
-    assert len(set(directories)) == 2, "different parameters must not share a directory"
-
-    report = tmp_path / "sweep.html"
-    run("report", *directories, "--out", str(report))
-
-    html = report.read_text()
-    assert "lookback 10" in html and "lookback 20" in html
+    assert len([line for line in output.splitlines() if line.strip()]) == 1
 
 
 def test_re_running_a_backtest_does_not_duplicate_it(tmp_path: Path) -> None:

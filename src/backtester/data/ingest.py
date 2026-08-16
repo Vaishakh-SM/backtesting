@@ -22,6 +22,7 @@ holding exactly the first observations plus the real corrections.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -47,6 +48,8 @@ from backtester.data.schema import (
     UNIVERSE_VALUES,
 )
 from backtester.data.writer import append
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,13 @@ def ingest(
     recent bars would leave the store mixing pre- and post-split conventions.
     Reconciliation then means only the rows that genuinely changed are written.
     """
+    logger.info(
+        "ingesting %d tickers, %s to %s, into %s",
+        len(tickers),
+        start.date(),
+        end.date(),
+        ref.root,
+    )
     fetched = yahoo.fetch(tickers, start, end)
 
     first: dict[str, int] = {}
@@ -105,6 +115,13 @@ def ingest(
         append(ref, table, new_rows, ingested_at)
         first[table] = new_rows.num_rows - corrections
         restated[table] = corrections
+        logger.info(
+            "%s: %d new, %d restated (%d fetched)",
+            table,
+            first[table],
+            corrections,
+            rows.num_rows,
+        )
 
     return IngestionSummary(
         ingested_at=ingested_at,
